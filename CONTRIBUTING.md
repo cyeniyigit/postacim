@@ -6,7 +6,7 @@ Tkinter ile yazılmıştır; harici bağımlılıklar `requirements.txt` içinde
 ## Hızlı başlangıç
 
 ```bash
-git clone https://github.com/caglaryeniyigit/postacim.git
+git clone https://github.com/cyeniyigit/postacim.git
 cd postacim
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt

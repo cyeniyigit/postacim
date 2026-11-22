@@ -3,7 +3,7 @@
 **E-posta ve takvim istemcisi** — Exchange (EWS), IMAP/SMTP ve CalDAV
 destekli, Tkinter arayüzlü, hafif ve açık kaynak.
 
-[![Testler](https://github.com/caglaryeniyigit/postacim/actions/workflows/testler.yml/badge.svg)](https://github.com/caglaryeniyigit/postacim/actions/workflows/testler.yml)
+[![Testler](https://github.com/cyeniyigit/postacim/actions/workflows/testler.yml/badge.svg)](https://github.com/cyeniyigit/postacim/actions/workflows/testler.yml)
 [![Lisans](https://img.shields.io/badge/lisans-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
@@ -35,7 +35,7 @@ gerekmez. IMAP/SMTP açık olan sunucular için de tam bir istemci olarak
 ### En hızlı yol (GitHub'dan)
 
 ```bash
-git clone https://github.com/caglaryeniyigit/postacim.git
+git clone https://github.com/cyeniyigit/postacim.git
 cd postacim
 ./kur.sh
 ```
@@ -58,7 +58,7 @@ Sonra terminalden `postacim` yazıp çalıştırabilir ya da menüden açabilirs
 ### Kaynaktan çalıştırma (geliştiriciler)
 
 ```bash
-git clone https://github.com/caglaryeniyigit/postacim.git
+git clone https://github.com/cyeniyigit/postacim.git
 cd postacim
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt

@@ -30,8 +30,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/caglaryeniyigit/postacim"
-Issues = "https://github.com/caglaryeniyigit/postacim/issues"
+Homepage = "https://github.com/cyeniyigit/postacim"
+Issues = "https://github.com/cyeniyigit/postacim/issues"
 
 [project.gui-scripts]
 postacim = "postacim.__main__:main"
