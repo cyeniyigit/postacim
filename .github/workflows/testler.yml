@@ -47,6 +47,7 @@ jobs:
           set -e
           python tests/coklu_hesap_test.py 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
           python tests/imap_yerel_sunucu_test.py 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+          python tests/randevu_ekle_test.py 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
       - name: Arayüz testleri (Xvfb)
         run: |

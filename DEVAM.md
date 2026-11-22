@@ -812,3 +812,58 @@ güncellemede `If-Match` doğru gider.
 - [ ] Sürüm bilgisi tek yerde (`pyproject.toml` + `UYGULAMA_ADI`/sürüm
       sabiti) — şu an sürüm yalnız pyproject'ta
 - [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)
+
+---
+
+# 2026-11-22 (gece 2) — Yeni randevu eklenemiyordu (düzeltildi) + depo düzeni
+
+> **Kaldığımız yer:** Kullanıcı takvimde 25.11.2026 01:00–01:30'a not eklerken
+> hata aldı. Canlı olarak yeniden üretildi, kök neden bulundu ve düzeltildi.
+
+## 1. Hata: "Beklenmeyen hata: 'datetime.datetime' object is not subscriptable"
+- **Belirti:** "Yeni Randevu" penceresinde kaydet → hata penceresi; randevu
+  hiçbir yere yazılmıyordu. (Tarih/saatla ilgisi yoktu; **her** yeni randevu
+  ekleme denemesi bu hatayı veriyordu.)
+- **Kök neden:** `RandevuPenceresi._kaydet_cek()` içinde seçilen takvim
+  kaynağı **yanlış sıradan** okunuyordu:
+
+  ```python
+  secilen = islev[2]          # "ekle"de islev[2] = başlangıç datetime'i!
+  hedef_tur = secilen[0]      # → TypeError: datetime.subscriptable değil
+  ```
+  `ekle` işlevi 9 elemanlı: `(ekle, baslik, bas, bit, konum, aciklama,
+  tum_gun, kaynak, kural)` → kaynak **7.** sırada. `guncelle` işlevinde ise
+  kaynak gerçekten 2. sırada (`("guncelle", randevu, kaynak)`) — bu yüzden
+  düzenleme çalışırken ekleme çalışmıyordu.
+- **Düzeltme:** işleve göre kaynak ayrıştırılıyor; EWS hedefinde artık
+  **seçilen** Exchange hesabı kullanılıyor (daima aktif posta hesabı değil);
+  düzenlemede kayıt **kendi hesabına** (`kaynak_id`) gidiyor.
+- **Doğrulama:** canlı olarak
+  - EWS (Exchange) takvimine 25.11.2026 01:00–01:30 randevu eklendi ✓
+  - CalDAV (Gmail) takvimine aynı randevu eklendi ✓
+  - ikisi de `2026-11-24T22:00Z` (yerel 01:00) olarak doğru yazıldı ✓
+  - **Test kayıtları silindi, kalıntı yok.**
+
+## 2. Yeni test: `tests/randevu_ekle_test.py`
+- Sahte istemcilerle ekleme/güncelleme akışı: CalDAV mı EWS mi hedeflendi,
+  saatler aktarıldı mı, tüm gün/RRULE aktarıldı mı.
+- **Regresyon kanıtı:** hatalı sürüm geri konulunca test aynı hatayla
+  (`TypeError: 'datetime.datetime' object is not subscriptable`) düşüyor.
+- `tests/run_all.sh` ve GitHub Actions akışına eklendi.
+
+## 3. Depo düzeni
+- `~/postacim` artık **git çalışma kopyası**; önceden ayrı bir kopya olarak
+  duruyordu ve GitHub'daki depodan (CI, rozetler, `CONTRIBUTING.md`,
+  ekran görüntüleri, `tests/run_all.sh`) ayrışmıştı.
+- Yedek: `~/postacim_yerel_20261122_2135.tar.gz`
+- Sürüm **0.1.3** (`postacim/__init__.py` → `__version__`, `pyproject.toml`
+  bunu okur).
+
+## Kalan işler
+- [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
+      (`RECURRENCE-ID`)
+- [ ] Google modern uç (OAuth2) desteği
+- [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
+- [ ] Kurum (EWS) takviminde `UpdateItem` bozuk → düzenleme "sil + yeniden oluştur"
+- [ ] Takvim randevuları için arama/kategori etiketi
+- [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)

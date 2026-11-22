@@ -3,6 +3,23 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.3] — 2026-11-22
+
+### Düzeltilen
+- **Takvimde yeni randevu eklenemiyordu**: randevu penceresinde kaydetme
+  sırasında seçilen takvim kaynağı yanlış alandan okunuyordu (başlangıç
+  tarihi) → *"Beklenmeyen hata: 'datetime.datetime' object is not
+  subscriptable"*. Artık EWS ve CalDAV hedefleri doğru seçiliyor; saat
+  (gece yarısı dahil) olduğu gibi aktarılıyor.
+- Randevu **düzenlenirken** kayıt kendi takvim hesabına gider (`kaynak_id`),
+  listede başka hesap seçili olsa bile.
+- Birden çok Exchange hesabı varken yeni randevu, seçilen EWS hesabına yazılır
+  (daima aktif posta hesabına değil).
+
+### Eklenen
+- `tests/randevu_ekle_test.py` — randevu ekleme/güncelleme akışının
+  çevrimdışı regresyon testi (`tests/run_all.sh` ve CI'a eklendi)
+
 ## [0.1.2] — 2026-11-22
 
 ### Eklenen

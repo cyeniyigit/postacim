@@ -4834,23 +4834,29 @@ class RandevuPenceresi(tk.Toplevel):
         if not kaynaklar:
             raise EwsHata("Bağlı takvim hesabı yok.")
         islem = islev[0]
-        secilen = islev[2] if len(islev) > 2 else None
+        # "ekle"  : (ekle, baslik, bas, bit, konum, aciklama, tum_gun, kaynak, kural)
+        # "guncelle": (guncelle, randevu, kaynak)
+        # NOT: seçilen kaynak "ekle"de 7., "guncelle"de 2. sırada;
+        # yanlış sıra okunursa datetime nesnesi kaynak sanılır.
+        if islem == "ekle":
+            _, baslik, bas, bit, konum, aciklama, tum_gun, secilen, kural = islev
+        else:
+            secilen = islev[2] if len(islev) > 2 else None
         # Düzenlenen kaynak: url varsa CalDAV, item_id varsa EWS
         hedef_tur = None
         if islem == "guncelle":
             r = islev[1]
             hedef_tur = "caldav" if getattr(r, "url", "") else "ews"
-            if secilen and secilen[0] == "caldav" and hedef_tur == "caldav":
-                pass  # seçilen hesap aynı türde — aşağıda kullanılacak
-        # Varsayılan: ilk kaynak
+        # Varsayılan: seçilen kaynak (yoksa ilk kaynak)
         if hedef_tur is None:
             hedef_tur = secilen[0] if secilen else kaynaklar[0][0]
 
         if hedef_tur == "caldav":
             cal = None
-            if secilen and secilen[0] == "caldav":
+            if islem == "ekle" and secilen and secilen[0] == "caldav":
                 cal = secilen[1]
             else:
+                # Düzenlemede kayıt kendi hesabına (kaynak_id) gider
                 kaynak_id = getattr(islev[1], "kaynak_id", "") if islem == "guncelle" else ""
                 cal = self.ana._kaynak_caldav(kaynak_id)
             if cal is None:
@@ -4864,11 +4870,17 @@ class RandevuPenceresi(tk.Toplevel):
             else:
                 istemci.randevu_guncelle(islev[1])
         else:
-            hesap = self.ana.ayarlar.aktif_hesap() or {}
-            istemci = self.ana._istemciler.get(self.ana.aktif_id)
+            # EWS hedefi: seçilen EWS hesabı (yoksa aktif hesap)
+            hesap = {}
+            if secilen and secilen[0] == "ews":
+                hesap = secilen[1]
+            if not hesap:
+                hesap = self.ana.ayarlar.aktif_hesap() or {}
+            hesap_id = hesap.get("id") or self.ana.aktif_id
+            istemci = self.ana._istemciler.get(hesap_id)
             if istemci is None:
                 istemci = self.ana._istemci_kur(hesap)
-                self.ana._istemciler[self.ana.aktif_id] = istemci
+                self.ana._istemciler[hesap_id] = istemci
             if islem == "ekle":
                 _, baslik, bas, bit, konum, aciklama, tum_gun, _, kural = islev
                 istemci.randevu_ekle(
