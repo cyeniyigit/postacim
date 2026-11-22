@@ -55,3 +55,8 @@ jobs:
           app.destroy()
           print('arayüz açıldı')
           "
+
+      - name: Kurulum betiği kontrolü (kur.sh)
+        run: |
+          ./kur.sh --gelistirici
+          "$HOME/.local/share/postacim/venv/bin/python" -c "import postacim.ui; print('kurulum betiği çalıştı')"

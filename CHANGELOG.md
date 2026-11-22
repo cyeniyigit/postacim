@@ -8,6 +8,11 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 İlk açık kaynak sürümü.
 
 ### Eklenen
+- **Kurulum betiği (`kur.sh`)**: sanal ortamı oluşturur, bağımlılıkları kurar,
+  uygulamayı kurar, `~/.local/bin/postacim` başlatıcısı ve uygulama menüsü
+  girdisi (`.desktop`) oluşturur; `--kaldir` ile kaldırma, `--gelistirici`
+  ile yalnız geliştirici ortamı seçenekleri
+- **`run.sh`**: sanal ortam yoksa kendisi kurup uygulamayı başlatır
 - **EWS istemcisi**: `GetFolder`, `SyncFolderItems` (artımlı liste),
   `GetItem`, `CreateItem`, `MoveItem`, `DeleteItem`, `GetAttachment`,
   `ResolveNames` (kişi tamamlama) ve REST API yedeği

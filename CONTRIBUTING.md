@@ -6,12 +6,22 @@ Tkinter ile yazılmıştır; harici bağımlılıklar `requirements.txt` içinde
 ## Hızlı başlangıç
 
 ```bash
-git clone https://github.com/<kullanici>/postacim.git
+git clone https://github.com/caglaryeniyigit/postacim.git
 cd postacim
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m postacim
 ```
+
+Veya tüm ortamı (sanal ortam + bağımlılıklar) tek komutla kurun:
+
+```bash
+./kur.sh --gelistirici
+```
+
+> **Not:** Sanal ortam (`.venv`) depoya dâhil **değildir** — her makinede
+> farklı Python sürümü/derleyici gerekir. `kur.sh` ve `run.sh` onu sizin
+> için oluşturur.
 
 ## Testler
 

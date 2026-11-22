@@ -3,7 +3,7 @@
 **E-posta ve takvim istemcisi** — Exchange (EWS), IMAP/SMTP ve CalDAV
 destekli, Tkinter arayüzlü, hafif ve açık kaynak.
 
-[![Testler](https://github.com/<kullanici>/postacim/actions/workflows/testler.yml/badge.svg)](https://github.com/<kullanici>/postacim/actions/workflows/testler.yml)
+[![Testler](https://github.com/caglaryeniyigit/postacim/actions/workflows/testler.yml/badge.svg)](https://github.com/caglaryeniyigit/postacim/actions/workflows/testler.yml)
 [![Lisans](https://img.shields.io/badge/lisans-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
@@ -32,20 +32,43 @@ gerekmez. IMAP/SMTP açık olan sunucular için de tam bir istemci olarak
 
 ## Kurulum
 
-### Kaynaktan (geliştiriciler için)
+### En hızlı yol (GitHub'dan)
 
 ```bash
-git clone https://github.com/<kullanici>/postacim.git
+git clone https://github.com/caglaryeniyigit/postacim.git
+cd postacim
+./kur.sh
+```
+
+`kur.sh` geri kalan her şeyi yapar:
+
+- Python 3.10+ kontrolü (yoksa uyarı verir)
+- **Sanal ortamı** `~/.local/share/postacim/venv` altında oluşturur
+- Bağımlılıkları kurar (`requests`, `requests-ntlm`, `sv-ttk`, `Pillow`,
+  `tkinterweb`)
+- Uygulamayı kurar ve `~/.local/bin/postacim` başlatıcısını oluşturur
+- Uygulama menüsüne "Postacım" girdisi ekler (`.desktop` dosyası)
+
+Sonra terminalden `postacim` yazıp çalıştırabilir ya da menüden açabilirsiniz.
+
+> **Sanal ortam (venv) depoya dâhil edilmez** — projeye gömülmez, çünkü
+> her makinede farklı Python/derleyici vardır. `kur.sh` onu sizin için
+> oluşturur. Kaldırmak için: `./kur.sh --kaldir`
+
+### Kaynaktan çalıştırma (geliştiriciler)
+
+```bash
+git clone https://github.com/caglaryeniyigit/postacim.git
 cd postacim
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-./run.sh
+.venv/bin/python -m postacim
 ```
 
-`run.sh` sanal ortamı yoksa kendisi kurar; elle kurmak isterseniz:
+`run.sh` sanal ortamı yoksa **kendisi kurar** ve uygulamayı başlatır:
 
 ```bash
-.venv/bin/python -m postacim
+./run.sh
 ```
 
 ### pip ile
@@ -58,7 +81,7 @@ pipx install postacim         # yalnız kendi kullanıcınıza
 ### Dağıtım paketi
 
 Pardus/Fedora/openSUSE için paket dosyaları hazırlanırken
-`pyproject.toml` ve `run.sh` esas alınır; uygulama `postacim` adıyla
+`pyproject.toml` ve `kur.sh` esas alınır; uygulama `postacim` adıyla
 kurulur ve `~/.config/postacim/` altında ayar tutar.
 
 Gereken paketler: `requests`, `requests-ntlm`, `sv-ttk` (modern tema),
