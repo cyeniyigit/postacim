@@ -132,6 +132,7 @@ Icon=$SIMGE_AD
 Terminal=false
 Categories=Network;Email;
 StartupNotify=true
+StartupWMClass=postacim
 EOF
 chmod +x "$BASLATICI"
 

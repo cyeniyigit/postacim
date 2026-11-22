@@ -157,6 +157,16 @@ def main() -> int:
         print(f"başlık           : {uygulama.title()!r}")
         kontrol("Kurum" in uygulama.title(), "başlıkta aktif hesap adı")
 
+        # --- Pencere simgesi ve WM_CLASS (görev çubuğu eşleşmesi) ---
+        kontrol(uygulama.tk.call("tk", "appname") == "postacim",
+                f"WM_CLASS uygulama adı ({uygulama.tk.call('tk', 'appname')!r})")
+        kontrol(uygulama.iconname() == "Postacım",
+                f"WM_ICONNAME Postacım ({uygulama.iconname()!r})")
+        kontrol(getattr(uygulama, "_pencere_simgesi_ref", None) is not None,
+                "başlık çubuğu simgesi ayarlandı")
+        kontrol("uygulama_64" in uygulama.ikon,
+                "64×64 pencere simgesi yüklendi")
+
         # --- Hesap ağacı (Evolution tarzı) ---
         koklar = uygulama.klasor_listesi.get_children()
         kontrol(len(koklar) == 2, f"2 hesap düğümü ({koklar})")
@@ -277,6 +287,20 @@ def main() -> int:
         uygulama._mesaj_alanini_temizle()
         uygulama._agaci_yenile()
         kontrol(True, "kuyruk/yutma + ağaç yenileme hatasız")
+
+        # --- Hakkında penceresi (logolu) ---
+        uygulama.hakkinda()
+        bekle(uygulama, 1)
+        hakkinda = [w for w in uygulama.winfo_children()
+                    if w.winfo_class() == "Toplevel"]
+        kontrol(len(hakkinda) == 1, "Hakkında penceresi açıldı")
+        if hakkinda:
+            p = hakkinda[0]
+            kontrol("Hakkında" in p.title() or "hakkında" in p.title(),
+                    f"pencere başlığı ({p.title()!r})")
+            kontrol(p.tk.call("tk", "appname") == "postacim",
+                    "Hakkında penceresi de aynı WM_CLASS")
+            p.destroy()
     finally:
         try:
             uygulama.destroy()

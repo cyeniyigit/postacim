@@ -3,6 +3,19 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.1] — 2026-11-22
+
+### Eklenen
+- **Pencere simgesi**: başlık çubuğunda uygulama simgesi (64×64 ölçekli
+  PNG), görev çubuğu/launcher eşleşmesi için `WM_CLASS` (`tk appname`)
+- **Hakkında penceresi**: logolu, sürüm bilgili özel pencere (eskiden düz
+  `messagebox` idi)
+- **Sürüm tek kaynaktan**: `postacim/__init__.py` → `__version__`;
+  `pyproject.toml` bunu okur
+
+### Düzeltilen
+- `wm class` komutu Tk'de yoktu; pencere eşleşmesi `tk appname` ile yapılıyor
+
 ## [0.1.0] — 2026-11-22
 
 İlk açık kaynak sürümü.

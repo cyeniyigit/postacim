@@ -32,6 +32,7 @@ except ImportError:
 
 from .config import Ayarlar, KisiDefteri
 from . import tekrar
+from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
     RESIM_SEMASI,
     EwsHata,
@@ -134,6 +135,13 @@ TAKVIM_STIL_KOYU: dict = {
 class Postacim(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Uygulama adı (WM_CLASS) pencere oluşturulmadan ÖNCE ayarlanmalı;
+        # görev çubuğu bu adı masaüstü girdisiyle (StartupWMClass=postacim)
+        # eşleştirip doğru simgeyi gösterir.
+        try:
+            self.tk.call("tk", "appname", "postacim")
+        except tk.TclError:
+            pass
         self.geometry("1280x820")
         self.minsize(980, 620)
 
@@ -235,6 +243,7 @@ class Postacim(tk.Tk):
 
     def _arayuz_kur(self):
         self._ikonlari_yukle()
+        self._pencere_simgesi()
         self._stil_uygula()
         self._menu_renkleri()
         self._menu_kur()
@@ -243,6 +252,28 @@ class Postacim(tk.Tk):
         self._durum_cubugu_kur()
         # Widget'lar kurulduktan sonra tema renkleri uygulanır
         self._stil_uygula()
+
+    def _pencere_simgesi(self, pencere=None):
+        """Pencere simgesini uygular (başlık çubuğu).
+
+        Görev çubuğu/launcher eşleşmesi `WM_CLASS` ile yapılır ve Tk'de
+        `wm class` komutu yoktur; bunun yerine uygulama adı (`tk appname`)
+        **pencere oluşturulmadan önce** ayarlanır (bkz. `__init__`).
+        """
+        pencere = pencere if pencere is not None else self
+        try:
+            pencere.wm_iconname(UYGULAMA_ADI)
+        except tk.TclError:
+            pass
+        ikon = self.ikon.get("uygulama_64") or self.ikon.get("uygulama")
+        if ikon is None:
+            return
+        try:
+            pencere.iconphoto(True, ikon)
+            # Referansı tut (Tk, görsel Python tarafında yaşamazsa siler)
+            self._pencere_simgesi_ref = ikon
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------ tema
 
@@ -1991,6 +2022,7 @@ class Postacim(tk.Tk):
             f"Postacım — {hesap.get('ad') or 'Bağlantı bilgileri'}"
         )
         pencere.transient(self)
+        self._pencere_simgesi(pencere)
         pencere.grab_set()
         satir = 0
         if hata:
@@ -3504,6 +3536,7 @@ class Postacim(tk.Tk):
         pencere = tk.Toplevel(self)
         pencere.title("Mesaj bilgileri")
         pencere.transient(self)
+        self._pencere_simgesi(pencere)
         pencere.geometry("500x400")
         metin = tk.Text(
             pencere, wrap="word", padx=12, pady=12, relief="flat",
@@ -3551,18 +3584,89 @@ class Postacim(tk.Tk):
             )
 
     def hakkinda(self):
-        messagebox.showinfo(
-            "Hakkında",
-            f"{UYGULAMA_ADI}\n\n"
-            "Kurum Exchange hesapları EWS (NTLM) üzerinden; Gmail ve diğer\n"
-            "IMAP hesapları IMAP/SMTP üzerinden okunur ve yazılır.\n\n"
-            "Birden fazla hesap eklenebilir: klasörler soldaki ağaçta hesap\n"
-            "adının altında görünür, bir klasöre tıklayınca o hesaba geçilir.",
-        )
+        """Hakkında penceresini açar (logolu, sürüm bilgili)."""
+        HakkindaPenceresi(self)
 
     def _kapat(self):
         self.ayarlar.kaydet()
         self.destroy()
+
+
+class HakkindaPenceresi(tk.Toplevel):
+    """Hakkında penceresi: logo, sürüm ve kısa bilgi."""
+
+    def __init__(self, ana: "Postacim"):
+        super().__init__(ana)
+        self.ana = ana
+        self.title(f"{UYGULAMA_ADI} hakkında")
+        self.transient(ana)
+        ana._pencere_simgesi(self)
+        self.geometry("420x430")
+        self.resizable(False, False)
+
+        arka, on = ana._tema_renkleri()
+        govde = tk.Frame(self, bg=arka)
+        govde.pack(fill="both", expand=True)
+
+        # Logo
+        logo = ana.ikon.get("uygulama_128") or ana.ikon.get("uygulama")
+        if logo is not None:
+            resim = tk.Label(govde, image=logo, bg=arka, bd=0)
+            resim.pack(pady=(22, 8))
+
+        tk.Label(
+            govde, text=UYGULAMA_ADI, bg=arka, fg=on,
+            font=(YAZI_TIPİ, 16, "bold"),
+        ).pack()
+        tk.Label(
+            govde, text=f"Sürüm {SURUM}", bg=arka, fg=on,
+            font=(YAZI_TIPİ, 10),
+        ).pack(pady=(2, 14))
+
+        tk.Label(
+            govde,
+            text=(
+                "E-posta ve takvim istemcisi\n"
+                "Exchange (EWS) • IMAP/SMTP • CalDAV"
+            ),
+            bg=arka, fg=on, justify="center", font=(YAZI_TIPİ, 10),
+        ).pack()
+
+        ayrac = tk.Frame(govde, bg=arka, height=12)
+        ayrac.pack()
+
+        tk.Label(
+            govde,
+            text=(
+                "Kurum Exchange hesapları EWS (NTLM) üzerinden;\n"
+                "Gmail ve diğer IMAP hesapları IMAP/SMTP üzerinden\n"
+                "okunur ve yazılır. Birden fazla hesap eklenebilir."
+            ),
+            bg=arka, fg=on, justify="center", font=(YAZI_TIPİ, 10),
+        ).pack()
+
+        ayrac2 = tk.Frame(govde, bg=arka, height=12)
+        ayrac2.pack()
+
+        tk.Label(
+            govde, text="GPL-3.0 lisanslı • açık kaynak",
+            bg=arka, fg=on, font=(YAZI_TIPİ, 9),
+        ).pack()
+        tk.Label(
+            govde, text=PROJE_ADRESI, bg=arka, fg=on,
+            font=(YAZI_TIPİ, 9),
+        ).pack(pady=(2, 16))
+
+        ttk.Button(govde, text="Kapat", command=self.destroy).pack(pady=(0, 16))
+
+        self.after_idle(self._grab_al)
+
+    def _grab_al(self, deneme=0):
+        try:
+            self.grab_set()
+        except tk.TclError:
+            if deneme < 20 and self.winfo_exists():
+                self.after(50, lambda: self._grab_al(deneme + 1))
 
 
 class HesapPenceresi(tk.Toplevel):
@@ -3578,6 +3682,7 @@ class HesapPenceresi(tk.Toplevel):
         self.hesap = dict(hesap) if hesap else None
         self.title("Hesap ekle" if hesap is None else "Hesap düzenle")
         self.transient(ana)
+        ana._pencere_simgesi(self)
         self.geometry("470x560")
         self.resizable(False, False)
 
@@ -4168,6 +4273,7 @@ class YeniPostaPenceresi(tk.Toplevel):
         )
         self.geometry("720x600")
         self.transient(ana)
+        ana._pencere_simgesi(self)
         self.ekler: list[tuple[str, bytes, str]] = []
 
         self.kime_var = tk.StringVar()
@@ -4353,6 +4459,7 @@ class RandevuPenceresi(tk.Toplevel):
         self.geometry("460x600")
         self.resizable(False, False)
         self.transient(ana)
+        ana._pencere_simgesi(self)
         # grab_set burada yapılmaz: pencere henüz haritalanmadan grab
         # "window not viewable" hatası verir ve __init__ yarıda kesilip
         # boş pencere kalır. Gövde kurulduktan sonra _grab_al denenir.
@@ -4782,6 +4889,7 @@ class TakvimHesapPenceresi(tk.Toplevel):
         self.title("Takvim Hesapları")
         self.geometry("560x480")
         self.transient(ana)
+        ana._pencere_simgesi(self)
         self.grab_set()
 
         govde = ttk.Frame(self, padding=12)
@@ -5028,6 +5136,7 @@ class AyarlarPenceresi(tk.Toplevel):
         self.geometry("580x560")
         self.minsize(520, 460)
         self.transient(ana)
+        ana._pencere_simgesi(self)
         # Geçici kopya: Kaydet'e kadar dokunulmaz
         import copy as _copy
         self.stil = _copy.deepcopy(ana.takvim_stil)

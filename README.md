@@ -275,7 +275,9 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   **tekrarlayan olayların (RRULE) genişletilmesi**, randevu tamamlandı işareti,
   otomatik yenileme — ayrıntı için [Takvim](#takvim) bölümü
 - **Arayüz:** tüm düğmelerde ikon (`postacim/ikonlar/*.png`), üç bölme
-  arasında boşluk yok, tarih sütunu tam görünür
+  arasında boşluk yok, tarih sütunu tam görünür; **başlık çubuğunda uygulama
+  simgesi**, görev çubuğunda doğru ad/simge (`WM_CLASS` eşleşmesi)
+- **Hakkında:** logolu, sürüm bilgili pencere (Yardım → Hakkında)
 - **Modern tema:** Sun Valley (Windows 11 tarzı) — **Görünüm** menüsünden
   açık/koyu tema seçilebilir, tercih hatırlanır; Ubuntu yazı tipi
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "postacim"
-version = "0.1.0"
+dynamic = ["version"]
 description = "E-posta ve takvim istemcisi — Exchange (EWS), IMAP/SMTP ve CalDAV"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,6 +38,9 @@ postacim = "postacim.__main__:main"
 
 [tool.setuptools]
 packages = ["postacim"]
+
+[tool.setuptools.dynamic]
+version = { attr = "postacim.__version__" }
 
 [tool.setuptools.package-data]
 postacim = ["ikonlar/*.png"]

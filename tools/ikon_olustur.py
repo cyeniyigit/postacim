@@ -123,6 +123,14 @@ def main() -> int:
     os.makedirs(os.path.dirname(HEDEF), exist_ok=True)
     resim.save(HEDEF, "PNG", optimize=True)
     print(f"✓ {HEDEF} ({BOYUT}×{BOYUT})")
+
+    # Başlık çubuğu (64), görev çubuğu (48) ve Hakkında penceresi (128)
+    dizin = os.path.dirname(HEDEF)
+    for boyut in (128, 64, 48):
+        yol = os.path.join(dizin, f"uygulama_{boyut}.png")
+        resim.resize((boyut, boyut), Image.LANCZOS).save(yol, "PNG", optimize=True)
+        print(f"✓ {yol} ({boyut}×{boyut})")
+
     # Küçük önizleme (README için)
     onizleme = os.path.join(KOK, "belge", "simge.png")
     if os.path.isdir(os.path.dirname(onizleme)):
