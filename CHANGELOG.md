@@ -3,6 +3,21 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.4] — 2026-11-22
+
+### Düzeltilen
+- **Okundu/okunmadı işareti artık sunucuya yazılıyor**: EWS isteğinde
+  `ItemChange` elemanı yanlış ad alanında (`m:ItemChange`) gönderiliyordu;
+  Exchange "ErrorInvalidArgument — The request is invalid." döndürüyor ve
+  durum çubuğunda *"Okundu bilgisi sunucuya yazılamadı"* uyarısı çıkıyordu.
+  Doğrusu `t:ItemChange` (types ad alanı) — düzeltildi ve canlı doğrulandı
+  (sunucudan geri okundu).
+  *Not: bu hata sunucudan değil, istemciden kaynaklanıyordu.*
+
+### Eklenen
+- `tests/coklu_hesap_test.py` → EWS SOAP gövdesi ad alanı testleri
+  (`t:ItemChange` kullanımı, `m:ItemChange` kullanılmaması)
+
 ## [0.1.3] — 2026-11-22
 
 ### Düzeltilen

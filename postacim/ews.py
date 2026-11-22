@@ -460,6 +460,25 @@ def _ews_surumu(buyuk: str, kucuk: str) -> str:
     return SURUMLER[0]
 
 
+def _okundu_govde(item_id: str, change_key: str, okundu: bool) -> str:
+    """Okundu/okunmadı işaretleme isteğinin SOAP gövdesi.
+
+    DİKKAT: `ItemChange` elemanı **t:** (types) ad alanında olmalı;
+    `m:ItemChange` yazılırsa Exchange "ErrorInvalidArgument — The request is
+    invalid." döner ve işaret kaydedilmez.
+    """
+    return (
+        "<m:UpdateItem ConflictResolution=\"AutoResolve\" MessageDisposition=\"SaveOnly\">"
+        "<m:ItemChanges><t:ItemChange>"
+        f"<t:ItemId Id=\"{_kacis(item_id)}\" ChangeKey=\"{_kacis(change_key)}\"/>"
+        "<t:Updates><t:SetItemField>"
+        "<t:FieldURI FieldURI=\"message:IsRead\"/>"
+        f"<t:Message><t:IsRead>{'true' if okundu else 'false'}</t:IsRead></t:Message>"
+        "</t:SetItemField></t:Updates>"
+        "</t:ItemChange></m:ItemChanges></m:UpdateItem>"
+    )
+
+
 class EwsIstemci:
     """EWS uzerinden Exchange posta kutusu."""
 
@@ -1326,17 +1345,8 @@ class EwsIstemci:
         return kimlik.get("Id", "") if kimlik is not None else ""
 
     def okundu_isaretle(self, mesaj: Mesaj, okundu: bool = True) -> None:
-        govde = (
-            "<m:UpdateItem ConflictResolution=\"AutoResolve\" MessageDisposition=\"SaveOnly\">"
-            "<m:ItemChanges><m:ItemChange>"
-            f"<t:ItemId Id=\"{_kacis(mesaj.item_id)}\" ChangeKey=\"{_kacis(mesaj.change_key)}\"/>"
-            "<t:Updates><t:SetItemField>"
-            "<t:FieldURI FieldURI=\"message:IsRead\"/>"
-            f"<t:Message><t:IsRead>{'true' if okundu else 'false'}</t:IsRead></t:Message>"
-            "</t:SetItemField></t:Updates>"
-            "</m:ItemChange></m:ItemChanges></m:UpdateItem>"
-        )
-        self.istek(govde)
+        """Mesajı okundu/okunmadı olarak işaretler."""
+        self.istek(_okundu_govde(mesaj.item_id, mesaj.change_key, okundu))
 
     def tasi(self, mesaj: Mesaj, hedef: str = "deleteditems") -> None:
         """Mesaji tasir (silmek icin 'deleteditems' hedefi kullanilir)."""

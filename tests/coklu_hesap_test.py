@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from postacim.config import Ayarlar, yeni_hesap_id  # noqa: E402
 from postacim import imap as imap_mod  # noqa: E402
+from postacim import ews as ews_mod  # noqa: E402
 from postacim.ews import EwsHata, Klasor, Mesaj  # noqa: E402
 
 HATALAR = []
@@ -452,10 +453,30 @@ def smtp_test():
                 f"to_addrs ({gonderilen.get('to')})")
 
 
+def ews_xml_test():
+    """EWS istek gövdeleri — ad alanı (namespace) doğruluğu.
+
+    Regresyon: okundu işaretlemede `<m:ItemChange>` yazılıyordu; Exchange
+    "ErrorInvalidArgument — The request is invalid." döndürüyor ve işaret
+    kaydedilmiyordu. Doğrusu `<t:ItemChange>` (types ad alanı).
+    """
+    print("\n== ews: SOAP gövde ad alanları ==")
+    govde = ews_mod._okundu_govde("ITEM+ID=", "CK/123", True)
+    kontrol("<t:ItemChange>" in govde, "ItemChange t: ad alanında")
+    kontrol("<m:ItemChange>" not in govde, "yanlış m:ItemChange yok")
+    kontrol("<m:ItemChanges>" in govde, "ItemChanges m: ad alanında")
+    kontrol('FieldURI="message:IsRead"' in govde, "IsRead alanı")
+    kontrol("<t:IsRead>true</t:IsRead>" in govde, "okundu=true")
+    kontrol("<t:IsRead>false</t:IsRead>" in ews_mod._okundu_govde("x", "y", False),
+            "okundu=false")
+    kontrol("ITEM+ID=" in govde, "item_id kaçışı")
+
+
 def main() -> int:
     config_test()
     imap_test()
     smtp_test()
+    ews_xml_test()
     if HATALAR:
         print(f"\n!! {len(HATALAR)} HATA:")
         for h in HATALAR:

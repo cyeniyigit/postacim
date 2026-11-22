@@ -20,7 +20,7 @@ Aşağıdaki EWS işlemleri **sunucuda** hata veriyor; istemci tarafında düzel
 | EWS işlemi | Hata | Not |
 |---|---|---|
 | `FindItem` | `ErrorInternalServerError` (500) | Tüm klasörlerde, tüm şema sürümlerinde. **Çözümü: `SyncFolderItems`** |
-| `UpdateItem` | "The request is invalid." | Tüm alanlarda (IsRead bile). Okundu işaretleme yazılamıyor |
+| `UpdateItem` | "The request is invalid." | **İstemci hatasıydı** (`m:ItemChange` → `t:ItemChange`); 22.11 gece düzeltildi, okundu işareti artık yazılıyor |
 | `GetAttachment` | `ErrorInternalServerError` (500) | **Aşıldı**: ek mesajın MIME içeriğinden çıkarılıyor (`GetItem` + `IncludeMimeContent`) |
 | `ResolveFolder` | "The request is invalid." | Kullanılmıyor, alternatif yol var |
 
@@ -95,7 +95,7 @@ Mesaj listesinde sağ tuş → **Outlook tarzı bağlam menüsü** (`_mesaj_menu
 | Öğe | Not |
 |---|---|
 | Yanıtla / **Yanıtla Herkese** / İlet | Herkese: Kime = gönderen + tüm alıcılar, Bilgi = orijinal Cc (kendim hariç) |
-| Okundu olarak işaretle / Okunmadı yap | sunucu `UpdateItem` bozuk → durum çubuğunda uyarı |
+| Okundu olarak işaretle / Okunmadı yap | ✓ çalışıyor (22.11 gece düzeltildi) |
 | **Taşı →** | alt menüde klasör listesi (aktif klasör hariç) |
 | Sil | Silinmiş Öğeler'e taşır |
 | Kopyala (`Ctrl+C`) | Gönderen/Kime/Konu/Tarih + gövde → pano |
@@ -530,8 +530,6 @@ notuyla yerinde belirir.
 ## Kalan sınırlar
 
 
-- **Okundu/okunmadı işaretleme sunucuya yazılamıyor** (EWS `UpdateItem` bozuk) —
-  istemci sessizce geçiyor, durum çuburunda uyarı gösteriyor
 - **Ek indirme**: sunucuda `GetAttachment` bozuk olduğu için tek ek, mailin tam
   **MIME içeriğinden** ayrılıyor → indirme sırasında mailin tüm ekleri ağdan
   geçer, diske **yalnızca tıklanan** yazılır; MIME mesaj başına bir kez çekilir
@@ -541,7 +539,7 @@ notuyla yerinde belirir.
 - Arama istemci tarafında (tüm klasör bellekte) — büyük klasörlerde biraz yavaş
 
 ## Sonraki adımlar (opsiyonel)
-- [ ] sunucu yöneticilerinden `UpdateItem` ve `GetAttachment` hatalarının giderilmesi
+- [ ] sunucu yöneticilerinden `GetAttachment` hatasının giderilmesi
       (`GetAttachment` düzelirse ekler tek tek, MIME çekmeden iner)
 - [ ] sunucu yöneticilerinden TMG'de `$` ve `PATCH`/`DELETE` engellerinin kaldırılması
       (REST API'nin sayfalama ve güncelleme yetenekleri açılır)
@@ -569,7 +567,8 @@ Tek pencerede **Posta | Takvim** sekmeleri (Evolution tarzı).
 ### `ews.py` — EWS takvimi
 - `Randevu` modeli; takvim klasörü `SyncFolderItems` ile (`FindItem` bozuk olduğu için)
 - `randevu_ekle` (CreateItem), `randevu_sil` (HardDelete),
-  `randevu_guncelle` → **sil + yeniden oluştur** (`UpdateItem` bozuk)
+  `randevu_guncelle` → **sil + yeniden oluştur** (takvimde `UpdateItem`
+  `ErrorSendMeetingInvitationsOrCancellationsRequired` veriyor)
 
 ### `config.py` / `ui.py`
 - `takvimler()` kayıt listesi (`hesap.json`, 0600) — `takvim_ekle/guncelle/sil`
@@ -771,8 +770,8 @@ güncellemede `If-Match` doğru gider.
 - [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
 - [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
       (şu an tekrarın tamamı siliniyor/değişiyor) — `RECURRENCE-ID` gerekir
-- [ ] Kurum (EWS) takviminde `UpdateItem` bozuk → düzenleme "sil + yeniden oluştur"
-      (yeni kimlik verilir; takvimde kopya oluşabilir)
+- [ ] Kurum (EWS) takviminde `UpdateItem` → `ErrorSendMeetingInvitationsOrCancellationsRequired`
+      → düzenleme "sil + yeniden oluştur" (yeni kimlik verilir; kopya oluşabilir)
 - [ ] Takvim randevuları için arama/kategori etiketi
 
 ---
@@ -865,5 +864,60 @@ güncellemede `If-Match` doğru gider.
 - [ ] Google modern uç (OAuth2) desteği
 - [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
 - [ ] Kurum (EWS) takviminde `UpdateItem` bozuk → düzenleme "sil + yeniden oluştur"
+- [ ] Takvim randevuları için arama/kategori etiketi
+- [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)
+
+---
+
+# 2026-11-22 (gece 3) — "Okundu bilgisi sunucuya yazılamadı" uyarısı
+
+> **Kaldığımız yer:** Durum çubuğunda sürekli *"Okundu bilgisi sunucuya
+> yazılamadı (EWS UpdateItem hatası)"* uyarısı çıkıyordu. Kayıt sunucuya
+> yazılmıyordu. **Hata sandığımız gibi sunucuda değilmiş — istemcideymiş.**
+
+## 1. Teşhis
+- **Belirti:** mesaj açıldığında okundu işareti gönderiliyor, sunucu
+  `ErrorInvalidArgument — "The request is invalid."` dönüyor → istemci
+  sessizce geçiyor, durum çubuğunda uyarı.
+- **Önceki teşhis (yanlış):** "sunucudaki `UpdateItem` bozuk" sanıldı ve
+  sunucu yöneticisine bildirildi. Oysa `FindItem`, `CreateItem`,
+  `MoveItem`, `DeleteItem`, `SyncFolderItems` sorunsuz çalışıyordu.
+- **Gerçek neden:** EWS şemasında `ItemChange` elemanı **types** ad
+  alanında (`t:ItemChange`) olmalı. İstemci `<m:ItemChange>` gönderiyordu
+  (messages ad alanı) → Exchange isteği geçersiz sayıyor.
+
+  ```python
+  # YANLIŞ (sunucu hatası sanılıyordu)
+  "<m:ItemChanges><m:ItemChange>…</m:ItemChange></m:ItemChanges>"
+  # DOĞRU
+  "<m:ItemChanges><t:ItemChange>…</t:ItemChange></m:ItemChanges>"
+  ```
+- **Kanıt:** aynı istek 8 varyantla denendi; `t:ItemChange` içeren tek
+  varyant (`t:ItemChange`, diğer 7'si `m:ItemChange`) kabul edildi.
+  `ConflictResolution`, `MessageDisposition`, `ChangeKey` ve alan seçiminin
+  (`message:IsRead` / `message:MessageFlags`) hiçbir etkisi yok — hata
+  yalnızca ad alanındaydı.
+- **Canlı doğrulama:** mesaj okundu işaretlendi → sunucudan geri okundu
+  (`IsRead: true`) → eski durumuna (okunmadı) geri alındı. Uyarı artık
+  çıkmıyor.
+
+## 2. Düzeltme
+- `ews.py`: `okundu_isaretle` artık `<t:ItemChange>` kullanıyor; gövde
+  ayrı bir yardımcıya çıkarıldı (`_okundu_govde`) ki test edilebilsin.
+- `tests/coklu_hesap_test.py` → "ews: SOAP gövde ad alanları" bölümü:
+  `t:ItemChange` var, `m:ItemChange` yok.
+
+## 3. Takvimde `UpdateItem` hâlâ çalışmıyor (sunucu tarafı)
+- Takvim kaydı güncellemede (`calendar:Start`/`End`/`Subject`) sunucu
+  `ErrorSendMeetingInvitationsOrCancellationsRequired` veriyor — `SendOnly`,
+  `SaveOnly`, `SendMeetingInvitations`, `SendMeetingCancellations`
+  varyantlarının hepsi denendi, hepsi aynı hata. Bu sefer gerçekten
+  sunucu kaynaklı görünüyor; mevcut çözüm (sil + yeniden oluştur) korundu.
+
+## Kalan işler
+- [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
+      (`RECURRENCE-ID`)
+- [ ] Google modern uç (OAuth2) desteği
+- [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
 - [ ] Takvim randevuları için arama/kategori etiketi
 - [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)
