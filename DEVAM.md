@@ -1,0 +1,814 @@
+# Postacım — geliştirme günlüğü
+
+> Bu dosya projenin geliştirme sürecini anlatır: hangi sorun çözüldü, hangi
+> sunucu tarafı kısıtıyla karşılaşıldı, hangi kararlar alındı.
+
+Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
+Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
+
+## Kurum teşhisi (doğrulandı)
+- `mail.kurum.gov.tr` → Exchange 2013 CU2 (build 15.2.x, DAG/CAS sunucu adları gizlendi)
+- **IMAP (143/993) ve SMTP (25/465/587) dışarıdan KAPALI** → Thunderbird/Evolution/Outlook bağlanamaz
+- **EWS açık**: `https://mail.kurum.gov.tr/EWS/Exchange.asmx` (NTLM)
+- **REST API açık**: `https://mail.kurum.gov.tr/api/v2.0/` (MAPI over HTTP, NTLM)
+- NTLM NetBIOS alanı: `KURUM`, kullanıcı: `KURUM\kullanici`
+
+## 🔴 sunucu yöneticilerine bildirilmesi gerekenler (sunucu tarafı hatalar)
+Aşağıdaki EWS işlemleri **sunucuda** hata veriyor; istemci tarafında düzeltilemez.
+`GetFolder`, `GetItem`, `CreateItem`, `MoveItem`, `DeleteItem`, `SyncFolderItems` çalışıyor.
+
+| EWS işlemi | Hata | Not |
+|---|---|---|
+| `FindItem` | `ErrorInternalServerError` (500) | Tüm klasörlerde, tüm şema sürümlerinde. **Çözümü: `SyncFolderItems`** |
+| `UpdateItem` | "The request is invalid." | Tüm alanlarda (IsRead bile). Okundu işaretleme yazılamıyor |
+| `GetAttachment` | `ErrorInternalServerError` (500) | **Aşıldı**: ek mesajın MIME içeriğinden çıkarılıyor (`GetItem` + `IncludeMimeContent`) |
+| `ResolveFolder` | "The request is invalid." | Kullanılmıyor, alternatif yol var |
+
+Ayrıca **TMG (203.0.113.10) filtreleri**:
+- Sorgu dizesinde `$` karakteri → "Request Rejected" (`$top`, `$filter`, `$skip` kullanılamıyor)
+- `PUT` / `PATCH` / `DELETE` metotları engelli (yalnız `GET` ve `POST`)
+- `/owa/auth.owa` POST'u (form girişi) engelli → OWA tarayıcı dışından kullanılamıyor
+- REST API sayfa boyutu **10** ile sınırlı (`Prefer: odata.maxpagesize` yok sayılıyor)
+- REST'te mesaj kimliğindeki `/` yol ayracına dönüşüyor → kimlik bazlı REST çağrıları çalışmıyor
+
+## Çalışan kısımlar
+- `ews.py`: SOAP istemcisi (NTLM), **sürüm hataları düzeltildi**, geçici hatalarda retry
+- **Mesaj listeleme `SyncFolderItems` ile**: 512'şer adetlik gruplar, `SyncState` ile
+  artımlı devam → tüm klasör (1453 mesaj ≈ 3,5 sn) tek tekil listede
+- `config.py`: ayarlar `~/.config/postacim/hesap.json` (0600)
+- `ui.py`: klasör listesi (sayaçlı), mesaj listesi, **sayfalama**, okuyucu, arama
+  (istemci tarafında, tüm klasör üzerinde), yazma, taslak, sil/taşı, ek indirme
+- `tests/`: `test_ews.py` (bağlantı + liste + arama), `ui_smoke.py` (arayüz duman testi),
+  `finditem_dene.py`, `alternatif_dene.py`, `rest_kesif.py`, `eas_dene.py`, `sync_dene.py`
+
+## Bugün düzeltilen hatalar
+1. **Sunucu sürümü hatası (kritik)**: `istek()` cevaptaki `15.2` değerini
+   `RequestServerVersion` olarak gönderiyordu → sunucu "The request is invalid"
+   veriyordu ve **ilk istekten sonraki tüm istekler** bozuluyordu. Artık
+   `15.2 → Exchange2013` eşlenmesi yapılıyor.
+2. `MessageDisposition` öznitelik yerine eleman olarak yazılıyordu → gönderme çalışmıyordu
+3. `t:EmailAddress` adresi öznitelik değil **metin** → alıcılar ve gönderen adresleri boştu
+4. `t:AttachmentId` öznitelik olarak okunmalıydı → ek kimliği boştu
+5. `taslağa_kaydet` içinde `MessageDisposition="SaveOnly"` yoktu → taslak kaydetme çalışmıyordu
+6. `ui.py`: `Listbox.selection()` yok → `curselection()` kullanılmalı
+7. `ui.py`: klasörler yüklenirken `yenile()` kendini çağırıyordu (sonsuz döngü)
+8. `ui.py`: Tk değişkenleri arka plan iş parçacığından okunuyordu → "main thread is not in main loop"
+9. `ui.py`: kuyruk mesajları ("okundu", "okundu_hata") hata sanılıyordu, oturum düşüyordu
+
+## Arayüz güzelleştirmesi (2026-11-16 akşam)
+- **Düğme ikonları**: `postacim/ikonlar/*.png` (Pillow ile üretildi, 20x20) —
+  Yenile, Yeni e-posta, Ara, Temizle, Önceki, Sonraki, Gönder, Taslak, Ek ekle
+- **Klasör ikonları**: `klasor_<kimlik>.png` (inbox, sentitems, drafts,
+  deleteditems, junkemail, archive, outbox). Klasör listesi `Listbox`'tan
+  **`ttk.Treeview`**'a geçirildi (Listbox görüntü desteklemez); `iid` = klasör
+  kimliği olduğu için seçim doğrudan kimlikle yapılıyor, satır yüksekliği 26px
+- **Bölmeler arası boşluk kaldırıldı**: `pack` sırası yüzünden Treeview kendi
+  doğal genişliğinde (690px) kalıyor, pane ile arasında ~83px boşluk oluşuyor,
+  sayfalama çubuğu ise o dar boşluğa sıkışıp "Sonraki" kırpılıyordu.
+  Çözüm: sayfalama çubuğu önce, liste alanı sonra paketlendi; sütun
+  genişlikleri düşürüldü (esneme sütunları fazlayı alıyor), kaydırıcı önce
+  paketlendi
+- Okuyucu `Text` widget'inin PanedWindow'a talebi 80 karakterden 40'a
+  indirildi → pane paylaşma düzeldi (liste 486→593px, okuyucu 280→477px)
+- Yazma penceresi: düğmeler alt bara taşındı (0. sütun etiketleri
+  genişletiyordu, "Kime/Konu" alanlarından ayrı düşüyordu)
+- `tests/ui_smoke.py`'ye yazma penceresi açma kontrolü eklendi
+  (ikon `KeyError`'ı burada yakalandı)
+
+## Modern tema (2026-11-16, gece)
+- **sv-ttk (Sun Valley)** kuruldu → Windows 11 tarzı düz görünüm
+  (`requirements.txt`'e eklendi, `run.sh` kendiliğinden kurar)
+- **Görünüm menüsü**: Açık/Koyu tema seçimi, tercih `hesap.json`'a yazılır
+  (`tema` anahtarı) ve açılışta uygulanır
+- Tema-bağımlı renkler tek yerden yönetiliyor (`_tema_renkleri`,
+  `_vurgu_rengi`, `_stil_uygula`): okuyucu `Text`, yazma penceresi
+  `Text`/`Listbox`, durum çubuğu — koyu temada beyaz kutu kalmıyor
+- Tk klasik **menüleri tema almaz** → `_menu_renkleri()` ile seçenek
+  veritabanından boyanıyor, tema değişince menü yeniden kuruluyor
+- Yazı tipi: **Ubuntu 10** (okuyucu gövdesi önce monospace'ti → orantılı)
+- Doğrulama: ekran görüntüleri piksel histogramıyla ölçüldü
+  (açık tema %79 açık, koyu tema %94 koyu)
+
+## Sağ tuş menüsü (2026-11-16, gece)
+Mesaj listesinde sağ tuş → **Outlook tarzı bağlam menüsü** (`_mesaj_menu_olustur`):
+
+| Öğe | Not |
+|---|---|
+| Yanıtla / **Yanıtla Herkese** / İlet | Herkese: Kime = gönderen + tüm alıcılar, Bilgi = orijinal Cc (kendim hariç) |
+| Okundu olarak işaretle / Okunmadı yap | sunucu `UpdateItem` bozuk → durum çubuğunda uyarı |
+| **Taşı →** | alt menüde klasör listesi (aktif klasör hariç) |
+| Sil | Silinmiş Öğeler'e taşır |
+| Kopyala (`Ctrl+C`) | Gönderen/Kime/Konu/Tarih + gövde → pano |
+| **Farklı Kaydet (.eml)** | `mesaj_mime()` ile tam MIME diske yazılır |
+| **Bilgiler…** | özellik penceresi (gönderen, Kime, Cc, tarih, kimlik…) |
+| Yenile | F5 |
+
+Eklemeler: yazma penceresine **Bilgi (Cc)** alanı eklendi (`gonder(cc=...)`),
+`Mesaj.alici`/`Mesaj.bilgi` alanları `mesaj_detay`'da dolduruluyor,
+`Ctrl+Shift+R` kısayolu, liste üzerinde `Ctrl+C` (Text widget'larını bozmaz).
+
+## Gönder/Al butonu (2026-11-18)
+- **Araç çubuğu + `F9` + Dosya menüsü: "Gönder/Al"** — kutu istendiği an
+  tazelenir (Outlook'taki gibi). Ne yapar:
+  1. klasör sayaçlarını çeker (`GetFolder`)
+  2. onbellekli **tüm klasörlerde** artımlı güncelleme yapar (mevcut
+     `SyncState` ile klasör başına tek `SyncFolderItems` isteği — tam senkron
+     3,5-5 sn iken **~0,1 sn**)
+  3. aktif klasörün listesini onbellekten yeniler; durum çubuğunda
+     "Gönder/Al tamamlandı — N yeni mesaj • 50 mesaj / 1454 toplam"
+- `ews.py`: `guncelle()` eklendi; `_senkronize` artık onbellek güncelken tam
+  yeniden çekmek yerine yalnızca değişiklikleri alır; `mesajlar(..., tazele=False)`
+  saf onbellek okuması yapar
+- **Sayfalama artık ağ yapmıyor** (`tazele=False`) → sayfa geçişleri anlık
+- `ikonlar/gonder_al.png` (çift ok, Pillow 20x20)
+- Testler: `tests/guncelle_dene.py` (canlı: 1454 mesaj, 5,2 sn → 0,1 sn,
+  sayı tutarlı), `ui_smoke.py`'ye Gönder/Al kontrolü eklendi
+
+## Hesaptan Çıkış (2026-11-18)
+- **Dosya menüsü + üst çubuk düğmesi + `Ctrl+Q`: "Hesaptan Çıkış…"**
+  — Outlook'taki gibi oturumu kapatır:
+  1. onay sorulur; iptal edilirse hiçbir şey değişmez
+  2. `istemci = None`, kuyrukta bekleyen sonuçlar yutulur (`oturum=False`
+     bayrağı ile), mesaj/klasör onbellekleri ve arayüz temizlenir
+  3. **kayıtlı parola silinir** (`ayarlar`), durum çubuğunda "Oturum kapalı"
+  4. 200 ms sonra giriş penceresi açılır; bağlanılırsa oturum yeniden açılır
+- Üst çubukta en sağda, kırmızı kapı-çıkış ikonu (`ikonlar/cikis.png`,
+  Pillow 20×20)
+- Çıkış sonrası geciken arka plan sonuçları hata dialogu açmadan yutulur
+- Testler: `ui_smoke.py`'ye menü + düğme varlık kontrolü eklendi; canlı
+  çıkış/giriş akışı ayrı doğrulandı (iptal, onay, kuyruk yutma, yeniden giriş)
+
+## Bağlanamama → giriş penceresi (2026-11-18)
+- **Kimlik hatası (401) veya sunucuya ulaşılamadığında kullanıcı adı–parola
+  yeniden sorulur** — önce sadece hata dialogu çıkıyordu, kullanıcı hatalı
+  bilgiyle tekrar denemek zorundaydı
+- `_arka_plan`: `EwsYetkiHatasi` ve `requests.RequestException` artık
+  `("giris", mesaj)` turuyla kuyruğa düşer (diğer EwsHatalar eskisi gibi
+  hata dialogu)
+- `_giris_iste()`: istemci sıfırlanır → giriş penceresi açılır →
+  onaylanırsa `yenile()` ile otomatik yeniden bağlanır; iptal edilirse
+  durum çubuğunda "giriş iptal edildi"
+- `_kimlik_sor(hata=...)`: hata metni pencerenin başında kırmızı etiket
+  olarak gösterilir (kullanıcı neden yeniden sorulduğunu görür)
+- **Yeniden giriş kuyruğu güvencesi:** `_giris_soruluyor` bayrağı ile aynı
+  anda ikinci bir giriş penceresi açılmaz (kuyrukta art arda401+Ağ hatası
+  gelse tek pencere açılır)
+- Testler: `ui_smoke.py`'ye 401 + ağ hatası senaryosu, iptal/onay akışı ve
+  yeniden bağlanma kontrolü eklendi (canlı: 2 istek → tek tip akış,50 mesaj
+  yeniden yüklendi)
+
+## Çoklu seçim + taşıma sonrası yenileme (2026-11-18)
+- **Mesaj listesi `selectmode="extended"`:** Ctrl ile tek tek, Shift ile
+  aralık seçimi (Outlook tarzı) — `browse` iken tek seçime bağlıydı
+- `_secili_mesajlar()`: seçili satırlardan mesaj listesi (sıralı) — sil,
+  taşı, sağ tuş "Taşı" hepsi çoklu çalışır
+- Çoklu seçimde durum çubuğu: "N mesaj seçildi — Sil/İçin Delete veya sağ tuş";
+  önizleme ilk mesaja açılır
+- **Taşıma/silme sonrası otomatik yenileme:** `_tasi_cek` artık
+  `("yenile", …)` sonucu döndürür → `_sonuc_isle` durumu yazar ve `yenile()`
+  çağırır (liste + klasör sayaçları tazelenir); eskisiyle sadece durum
+  yazılıyordu, taşınan mesaj listede görünmeye devam ediyordu
+- Onay penceresi çokluda: "Seçili N mesaj Silinmiş Öğeler'e taşınacak."
+- Sağ tuş menüsü seçimi bozmaz (seçimdeyse korur, değilse o satıra düşer)
+- Testler: `ui_smoke.py`'ye selectmode + 3'lü seçim + "yenile" sonucu kontrolü
+  eklendi (canlı: 3 mesaj seçildi, yenile 1 kez çağrıldı)
+
+## Ek listesinde uzantı ikonları (2026-11-18)
+- **Ekler çerçevesi Listbox → Treeview** (`Ek.Treeview`, satır 26px): Listbox
+  ikon desteklemiyordu; Treeview `image=` ile satır başına ikon gösterir
+- **11 yeni ikon** (`ikonlar/ek_*.png`, Pillow 18×18): kıvrımlı sayfa +
+  renkli alt bant + uzantı etiketi —
+  `ek_pdf` (kırmızı), `ek_doc` (mavi), `ek_xls` (yeşil), `ek_ppt` (turuncu),
+  `ek_zip` (sarı), `ek_resim` (mor), `ek_metin` (gri), `ek_eposta` (turkuaz),
+  `ek_video` (menekşe), `ek_ses` (pembe), `ek_dosya` (genel gri)
+- `_ek_ikonu(dosya_adi)`: uzantı → ikon eşlemesi (pdf/doc(x)/xls(x)/ppt(x)/
+  zip/rar/7z/tar/gz/jpg…png/gif/webp/txt/log/md/json/xml/eml/msg/mp4…/mp3…);
+  bilinmeyen uzantı → genel sayfa, ikon yoksa → `ek.png`
+- `ek_indir()` Treeview API'ye taşındı (`selection()` + `int(iid)`), iid = sıra
+  no; `hesaptan_cikis` temizliği `delete(*get_children())`
+- Canlı doğrulama: "YEMEK LİSTESİ.xlsx" satırında ikon görünüyor,
+  11 uzantı eşlemesi + bilinmeyen uzantı sıfır hata
+
+## Otomatik yenileme (2026-11-19)
+- **Dosya → Otomatik yenileme** alt menüsü: Kapalı / 30 sn / **1 dakika** (varsayılan)
+  / 2 dk / 5 dk; tercih `hesap.json` → `otomatik_yenile` (saniye, 0 = kapalı)
+- Her tikte **seçili klasör** sessizce tazelenir: `klasor_listesi()` (sayaçlar) +
+  `mesajlar(tazele=True)` (artımlı `SyncState`, ~0,1 sn) — yalnızca bağlıyken;
+  devam eden bir iş varsa tik atlanır (`_is_sayaci` / `_otomatik_bekliyor`),
+  giriş penceresi asla otomatik açılmaz
+- Durum çubuğu **yalnızca yeni mesaj gelirse** yazılır ("Otomatik yenileme — N
+  yeni mesaj"); aksi halde sessiz
+- **Seçim ve kaydırma korunur** (polling'li arayüzde liste zıplamasın): yenileme
+  öncesi seçili mesajların `item_id`'leri alınır, liste yeniden kurulunca aynı
+  mesajlar geri seçilir ve `yview_moveto` ile kaydırma konumu iade edilir
+- Yapay `<<TreeviewSelect>>` olayları **yutulur** (`_secim_olayi_yut`: delete +
+  selection_set başına 1) — yenileme detay çekmez (`GetItem`), "N mesaj seçildi"
+  durumu bozulmaz. Denendi: Tk'de olaylar `selection_set`'te senkron değil,
+  idle'da kuyruklanıyor; unbind/rebind ile bastırılamıyor
+- `hesaptan_cikis` sayaçları sıfırlar; zamanlayıcı `_otomatik_baslat/_durdur`
+  ile yönetilir (aralık değişince yeniden kurulur)
+- Doğrulama: çevrimdışı işlevsel test (Xvfb, sahte istemci) 16/16 — zamanlayıcı
+  tıklaması, seçim/kaydırma koruması, sessizlik, atlama koşulları, tercih
+  kaydı; `ui_smoke.py`'ye menü + seçim koruması kontrolü eklendi
+
+## Kişi tamamlama (2026-11-19)
+Outlook'taki "Kime/Cc'ye yazınca kurum e-postasını bulma" eklendi.
+- **`ews.py` → `cozumle(metin)`**: EWS **`ResolveNames`** (SearchScope
+  `ContactsActiveDirectory`, olmazsa `ActiveDirectory`; `ReturnFullContactData=false`)
+  → `[(ad, eposta), ...]`. `ErrorNameResolutionNoResults` boş liste sayılır
+- **`config.py` → `KisiDefteri`**: `~/.config/postacim/kisiler.json` (0600),
+  en yeni kullanılan başta, en çok 200 kişi; gönderilen kişiler (`gonder()`)
+  ve seçilen öneriler deftere yazılır
+- **`ui.py` → `_AdTamamlama`**: Kime/Bilgi Entry'lerine bağlı. İmleçteki son
+  parça (`;`/`,` sonrası) **kurum dizininde filtrelenir** — kurum e-postası
+  olan tüm kişiler arasından eşleşmeler önerilir (yazma durunca 200 ms sonra
+  `ResolveNames`, arka planda). Açılır liste (Toplevel+Listbox) Entry
+  altında; `↓/↑` gezinme, `Enter`/`Tab`/tıklama kabul ("Ad Soyad <adres>; "),
+  `Esc` kapatır, odak kaybı kapatır. Değiştirilen aralık imleçteki parça
+  (ortadan düzenleme de çalışır); parça değiştiyse **bayat öneri kabul
+  edilmez** (`_sonuc_parca` kontrolü). Kayıtlı kişiler **yalnızca** kurum
+  dizini kullanılamadığında (`cozum_yok`) yedek olarak önerilir
+- **Dayanıklılık**: pencere kapanınca bekleyen `after` geri çağrıları
+  `TclError`'a karşı korumalı; Tk'ye yalnız ana iş parçacığında dokunulur
+- **Sunucu durumu (2026-11-19 canlı doğrulandı):** `ResolveNames` bu sunucuda
+  **çalışıyor**. Kritik pürüz: sunucu `<t:Resolution>` (**types** alanı)
+  döndürür — `m:Resolution` aranınca **boş liste** görünüyordu ("çalışmıyor"
+  belirtisinin kök nedeni); `cozumle()` artık iki isim alanına da bakıyor.
+  Eşleşme **adın herhangi bir parçasında** oluyor (ad/orta ad/soyad/e-posta):
+  "ali" → ALİ KARA; "ayse y" → aynı kişi; "meh" → 20 kişi.
+  Sunucu istek başına en çok **100** sonuç veriyor (`IncludesLastItemInRange=false`),
+  `cozumle()` en fazla 20 döndürüyor. Eşleşme yoksa `ErrorNameResolutionNoResults`
+  yerine `NoError` + boş `ResolutionSet` geliyor (ikisi de boş liste sayılır).
+  İstemci desteklemiyorsa `cozum_yok` bayrağı + tek uyarı (yedek: kayıtlı kişiler)
+- `_adres_listesi` artık "Ad Soyad <adres>" biçiminden adresi ayıklıyor
+  (Outlook'tan yapıştırılan listeler de gönderilir)
+- Doğrulama: **canlı** (2026-11-19, gerçek sunucu): yazma penceresinde
+  "ali" yazınca dizinden "ALİ KARA" bulundu ve `Enter` ile alana
+  yazıldı. Çevrimdışı test 21/21 (Xvfb, sahte istemci) — XML üretimi ve
+  ayrıştırma (t:Resolution), kapsam reddi → yedek kapsam, **yalnız dizin
+  sonuçları** (kayıtlı kişiler karışmıyor), bayat öneri reddi, çoklu alıcıda
+  son parçanın tamamlanması, Esc/Enter, yedek (kayıtlı kişiler) yolu,
+  hata → bayrak+uyarı; `ui_smoke.py`'de yedek yolu sabit kontrol + canlı
+  dizin sayısı raporu
+
+## Çoklu hesap + Gmail (IMAP) desteği (2026-11-19)
+
+**Talep:** "farklı e-posta adreslerimi de ekleyebilmeyi istiyorum, mesela
+gmail.com adresimi de eklemek istiyorum." → Evolution tarzı: her hesabın
+klasörleri hesap adının altında ayrı ayrı, tek tıkla geçiş.
+
+### Kararlar (kullanıcı onaylı)
+- Gmail erişimi: **Uygulama Parolası** (2 Adımlı Doğrulama açıkken üretilen
+  16 haneli parola; OAuth2 değil)
+- Görünüm: **birleşik gelen kutusu değil** — hesap → klasör hiyerarşisi
+
+### `config.py` — çoklu hesap modeli
+- `hesap.json` → `{"hesaplar": [...], "aktif": id, tema/otomatik_yenile…}`;
+  eski tek-hesap biçiminden **otomatik göç** (`_goc_et`: kullanici/parola/
+  sunucu/yontem/son_klasor ilk hesaba taşınır)
+- Hesap türleri: `ews` (kurum) ve `imap` (Gmail; gelen/giden sunucu+port+ssl)
+- Yeni API: `hesaplar()/hesap()/aktif_hesap()/hesap_ekle/hesap_guncelle/
+  hesap_sil/aktif_ayarla`; `son_klasor` artık **hesap başına**
+- Geriye dönük uyum: `al("kullanici")` gibi eski anahtarlar aktif hesaptan
+  okunur → eski test betikleri (`*_dene.py`) değişmeden çalışır
+
+### `imap.py` (yeni) — `ImapIstemci`
+`EwsIstemci` ile **aynı arayüz** (`klasor_listesi/mesajlar/guncelle/
+mesaj_detay/ek_indir/mesaj_mime/gonder/taslağa_kaydet/cozumle/
+okundu_isaretle/tasi/kalici_sil`) — `ui.py` ikisini aynı çağrılarla kullanır.
+- **Bağlantı:** `IMAP4_SSL` (ya da STARTTLS); kimlik hatası →
+  `EwsYetkiHatasi` (giriş penceresi), ağ hatası → `RequestException`
+  (yine giriş), kopan bağlantıda **1 otomatik yeniden bağlanma**
+- **Klasörler:** `LIST` + SPECIAL-USE eşleme (`\Sent`→sentitems, `\Trash`→
+  deleteditems, `\All`→archive…), `\Noselect` atlanır, `INBOX` ad yedeği;
+  adlar **değiştirilmiş UTF-7** ile taşınır (`_utf7_kodla/_utf7_coz` —
+  komutlar için ham ascii, görünüm için çözülmüş: "Gönderilmiş"), `[Gmail]/`
+  öneki sadeleştirilir, bilinmeyen klasörler kendi adıyla; `STATUS` ile
+  sayaçlar
+- **Mesajlar:** `UID SEARCH ALL` + `UID FETCH (RFC822.HEADER)` — zarf
+  onbelleği (en yeni 5000), bayraklar (`\Seen`→okundu), tarih `Date`
+  başlığından, ek sezgisi multipart'tan; sayfalama/arama istemci tarafında
+  (EWS ile aynı davranış); **arama sunucu tarafında** `SEARCH TEXT/FROM`
+  (UTF-8; desteklemeyen sunucuda tam onbellek + istemci filtresine düşer)
+- **Detay/ek/.eml:** `UID FETCH (BODY.PEEK[])` → MIME onbelleği (8 mesaj);
+  gövde HTML→düz metin; ekler `Content-Disposition: attachment`'tan;
+  `ek_indir` mevcut `_mime_den_ek` ile
+- **Yazma:** SMTP (`SSL465`/STARTTLS) ile gönderme; Gmail'e gönderilen için
+  Sent kopyası **atlanır** (Gmail SMTP gönderisini kendisi kaydeder), diğer
+  sunucularda `APPEND`; taslak `APPEND` (`\Draft`); **okundu/taşıma/silme
+  IMAP'ta çalışır** (STORE/MOVE — EWS'teki UpdateItem bozukluğu yok)
+- Kişi çözümleme yok → `cozum_yok` (UI, IMAP aktifken kurar) → kayıtlı
+  kişilerden öneri
+
+### `ui.py` — hesap ağacı ve geçiş
+- **İki kademeli klasör ağacı:** kök `hesap:<id>` (hesap adı), çocuk
+  `<hesap_id>|<klasor>`; iid ayrıştırılır, başka hesabın klasörüne tıklayınca
+  `_hesap_degistir()` çalışır
+- **`_hesap_degistir`:** kuyruk yutulur → aktif değişir → başlık/menü
+  işareti/cozum_yok güncellenir → istemci önbellekten alınır (yoksa kurulur)
+  → klasör varsa mesajlar yüklenir, yoksa `yenile()`; giriş gerekirse açılır
+  (iptal → False, menü işareti geri alınır)
+- **İstemci önbelleği** `_istemciler` (hesap başına bir istemci; hesaptan
+  çıkışta/silmede düşer); klasör listeleri `_hesap_klasorleri`
+- **Diğer hesapların klasörleri** açılışta arka planda çekilir
+  (`_diger_hesaplari_yukle`,1.5 sn sonra; parolası olmayanlar atlanır) →
+  kuyrukta `("ok", ("hesap_klasorler", id, klasorler))` biçimiyle gelir
+- **Hesaplar menüsü:** radyo düğmeleriyle hızlı geçiş + Hesap Ekle/Düzenle/Sil
+- **`HesapPenceresi`:** tür radyoları (Kurum EWS / Gmail veya IMAP) — düzenlemede
+  kilitli; türe göre alan çerçeveleri; **"Gmail'e ayarla"** düğmesi
+  (imap.gmail.com:993, smtp.gmail.com:465); Gmail için IMAP yardım metni
+  (uygulama parolası + IMAP etkinleştirme); yeni hesap kaydedilince ona geçilir
+- **Giriş penceresi hesap duyarlı:** IMAP'ta "E-posta / Uygulama parolası"
+  alanları + Gmail yardımı; alan boşsa kayıtlı parola korunur
+- **Hesaptan Çıkış yalnız aktif hesabı** etkiler (diğerleri bağlı kalır);
+  `hesaptan_cikis` → `_kuyrugu_yut`/`_mesaj_alanini_temizle` yardımcıları
+  paylaşıldı; başlık/yeni e-posta penceresi aktif hesadı gösterir
+
+### Testler (hepsi geçti)
+- `tests/coklu_hesap_test.py` (**çevrimdışı**, 50+ kontrol): göç, ekle/sil,
+  geriye dönük `al()`; UTF-7, LIST ayrıştırma, SPECIAL-USE eşleme, STATUS,
+  zarf onbelleği/sıralama/sayfalama, sunucu araması, MOVE/STORE/APPEND,
+  yanlış parola → `EwsYetkiHatasi`, SMTP gönderimi (mock'lu `imaplib`/`smtplib`)
+- `tests/hesap_ui_test.py` (**çevrimdışı, Xvfb**, 34 kontrol): 2 hesaplı
+  ağaç, klasöre tıklayınca geçiş (aktif/başlık/mesaj/cozum_yok/menü işareti),
+  geri dönüş, Hesaplar menüsü, HesapPenceresi + Gmail hazır ayarı + kaydet,
+  hesap silme
+- `tests/ui_smoke.py` (**canlı EWS**): göç sonrası gerçek sunucuda tam akış
+  (7 klasör, 1448 mesaj, arama, sayfalama, Gönder/Al, giriş hata akışları,
+  çoklu seçim, yazma penceresi, kurum dizini, ek indirme) + yeni hesap
+  ağacı/menü varlık kontrolleri — **istisna yok**
+- `py_compile` OK; yeni bağımlılık **yok** (imaplib/smtplib/email stdlib)
+
+### Bilinen sınırlar
+- Gmail hesabında kurum dizini (ResolveNames) yok → kişiler `kisiler.json`
+- Ek sezgisi listede multipart'tan (kesin `HasAttachments` değil); indirme
+  MIME üzerinden kesin
+- Klasör sayaçları `STATUS` ile klasör başına bir istek (çok etiketli
+  Gmail'de ilk yükleme birkaç saniye sürebilir)
+- Gmail uygulama parolası + IMAP etkinleştirme kullanıcının elinde (README'de
+  adım adım)
+
+### Düzeltme: "Beklenmeyen Hata: LIST command error" (2026-11-19)
+
+**Şikayet:** Gmail hesabı eklenince "Beklenmeyen Hata — List command error"
+dialogu çıktı.
+
+**Kök neden (ölçüldü):** `klasor_listesi()` `imap.list("", "*")` çağrısında
+dizin argümanı **boş string** geçiliyordu; imaplib bunu argümansız bırakınca
+sunucuya `LIST  *` (tek argüman) gidiyordu → RFC'ye aykırı → sunucu **BAD**
+yanıtı → imaplib `IMAP4.error("LIST command error: BAD …")` fırlatıyordu ve
+bu hata hiçbir yerde yakalanmadan `_arka_plan`'ın genel `except`'ine düşüp
+"Beklenmeyen Hata" olarak gösteriliyordu. imaplib'in doğru kullanımı (ve
+kendi `list()` varsayılanı) tırnaklı boş: `'""'` → `LIST "" *`.
+
+**Düzeltmeler:**
+1. `imap.py → klasor_listesi()`: `self.imap.list('""', "*")` (ham tel
+   doğrulandı: `EOBL2 LIST "" *`)
+2. `imap.py → _komut()`: `IMAP4.error` (sunucunun NO/BAD reddi) artık
+   **yeniden denenmeden** `EwsHata("IMAP komutu reddedildi: …")` olarak
+   yukarı çıkar → arayüzde okunur Türkçe hata, "Beklenmeyen Hata" değil.
+   (Bağlantı kopması `abort`/`OSError` olarak ayrılır: bir kez yeniden
+   bağlanma korunur; `abort` > `error` alt sınıfı olduğu için sıralama önemli.)
+
+**Testler (yeni ikisi de geçti):**
+- `tests/coklu_hesap_test.py`'ye regresyon: sahte sunucu artık hatalı LIST
+  argümanına **BAD** ile reddediyor → `EwsHata("IMAP komutu reddedildi:
+  LIST command error: BAD …")` doğrulanıyor
+- `tests/imap_yerel_sunucu_test.py` (**yeni**): gerçek `imaplib` üzerinden
+  yerel mini IMAP sunucusuna bağlanır, **ham tel kaydını** denetler —
+  `LIST "" *` gönderiliyor, hatalı `LIST  *` gönderilmiyor; LOGIN, STATUS,
+  utf-7 klasör adı (`G&APY-nderilmi&AV8-`) ve sayaç okuma da doğrulanır
+
+### Düzeltme: Gmail ağacı "Bağlanıyor"da takılıyordu + etiketler görünmüyordu (2026-11-19)
+
+**Şikayet:** Gmail Inbox yüklenirken "Bağlanıyor" aşamasında kalıyordu;
+ayrıca Gmail'deki özel klasörler (etiketler) hiç görünmüyordu.
+
+**Teşhis (üç ayrı hata, hepsi ölçüldü):**
+
+1. **`TclError: value for "-image" missing`** — `_agaci_yenile()` her klasör
+   için `image=self.ikon.get(...)` veriyordu. Eski düz ağaçta tüm EWS
+   klasörlerinin ikonu vardı; **Gmail etiketlerinin ikonu olmadığı** için
+   `None` gidiyordu ve `ttk.Treeview.insert` bunu **çökertiyordu**
+   (Xvfb'de doğrulandı: `image=None` → hata). Ağaç kurulumu yarıda kalıyor,
+   etiketler hiç eklenmiyordu. → İkon varsa veriliyor, yoksa `image`
+   seçeneği hiç gönderilmiyor.
+2. **Kuyruk yoklama ölüyordu** — `_kuyruk_yokla` içindeki istisna zinciri
+   kırılıyordu (`except queue.Empty` dışında kalan hata fonksiyonu sonlandırıyor
+   ve sonraki `after(120, …)` hiç kurulmuyordu) → arayüz süresiz
+   "Bağlanıyor"da kalıyordu. → Her sonuç kendi `try`'sinde; zamanlayıcı
+   `finally` ile her koşulda yeniden kuruluyor; ayrıca `image` hatası da
+   bu sayede dialogla karşılanıyor.
+3. **imaplib bağlantısı bozulunca kurtarılamıyordu** — canlı testte üst üste
+   `command SELECT/FETCH/LIST illegal in state LOGOUT` görüldü:
+   - `_komut()` yeniden denemede **eski bağlı metodu** (`self.imap.select`)
+     kullanıyordu; bağlantı yenilenince bile LOGOUT'taki eski nesneye
+     basıyordu → artık **metot adıyla** (`_komut("select", …)`) çağrılıyor,
+     her denemede `getattr(self.imap, …)` taze bağlantıyı çözüyor.
+   - Sunucu BYE gönderince imaplib `state='LOGOUT'`'ta kalıyor ve sonraki
+     her komut reddediliyordu → `_baglan()` LOGOUT'taki bağlantıyı atıp
+     yeniden bağlıyor; `_komut()` hata yolunda da LOGOUT görürse bir kez
+     yeniden deniyor.
+   - **Eşzamanlı kullanım:** imaplib bağlantısı birden fazla arka plan iş
+     parçacığıyla aynı anda kullanılamaz (yanıt eşleşmesi bozulur) →
+     `_kilitli` dekoratörü (RLock) tüm genel işlemleri (`klasor_listesi`,
+     `mesajlar`, `gonder`, `tasi`, …) seri yürütüyor.
+
+**Doğrulama:**
+- `tests/coklu_hesap_test.py`'ye3 regresyon: komut ortasında LOGOUT →
+  otomatik yeniden bağlanma; kalıcı LOGOUT → bağlantı atılıp yeniden liste;
+  hatalı LIST → okunur `EwsHata` (toplam testler geçti)
+- `tests/imap_yerel_sunucu_test.py` (tel denetimi) geçti
+- `tests/hesap_ui_test.py`'ye ikonsuz/türkçe etiketli klasör eklendi —
+  ağaç hatasız kuruluyor
+- **Canlı `ui_smoke.py` (gerçek Gmail + EWS):** ✓ istisna yok — 26 Gmail
+  klasörü (tüm etiketler listelenmişti),50 mesaj
+  yüklendi, LOGOUT hatası kalmadı
+
+**Bilinen davranış:** Gmail'de ilk açılışta tüm gelen kutusunun zarfları
+çekilir (en yeni5000 mesaj,200'lük gruplar) — büyük kutularda ilk liste
+10-20 sn sürebilir; durum çubuğunda "Mesajlar yükleniyor…" görünür.
+
+## Klasör silme (sağ tuş) (2026-11-19)
+
+**Talep:** "önceden oluşturduğum herhangi bir klasörü silmek istiyorum"
+(Gmail etiketleri).
+
+### Değişiklikler
+- **`imap.py → klasor_sil(kimlik)`**: IMAP `DELETE <klasör>`; `_kilitli`.
+  - **Özel klasör koruması:** `SIRA` (inbox, sentitems, drafts, deleteditems,
+    junkemail, archive, outbox) silinemez → `EwsHata` (Gmail'in "Tüm
+    Postaları" (\All→archive) da bu korumada)
+  - Sunucu reddederse (NO → `tip != "OK"`, BAD → `_komut` hata yolu) okunur
+    `EwsHata`; başarıda klasör onbellekleri (`_onbellek`, `_klasor_adlari`,
+    `_secili`) temizlenir
+- **`ui.py`:**
+  - Klasör ağacına **sağ tuş** bağlandı (`<Button-3>` → `_klasor_menusu`);
+    tıklanan satır seçilir, hesap düğümünde menü açılmaz
+  - `_klasor_menu_olustur(iid)`: **"Klasörü Sil…" yalnız aktif IMAP
+    hesabında + özel olmayan klasörde** (EWS hesaplarında ve başka hesapların
+    klasörlerinde öğe yok → menü hiç açılmaz)
+  - `klasor_sil(kimlik, ad)`: onay penceresi (Gmail'de etiket kaldırılır,
+    **mesajlar silinmez** açıklamasıyla) → arka planda `_arka_plan` →
+    `("yenile", "Klasör silindi")` sonucu → klasör listesi + sayaçlar
+    yenilenir; silinen klasör aktifse ilk klasöre düşülür
+    (`_klasorleri_doldur` mekanizması)
+
+### Testler (hepsi geçti)
+- `coklu_hesap_test.py`: inbox silme → koruma hatası; `DELETE "Proje X"`
+  komutu + haritadan düşme; sunucu reddi → okunur `EwsHata`
+- `imap_yerel_sunucu_test.py`: **tel denetimi** — `HMDA6 DELETE "Proje X"`
+  ham komutu doğrulandı
+- `hesap_ui_test.py`: aktif IMAP'te menü yalnızca özel olmayan klasörde;
+  başka hesapta/EWS'te menü yok; onay akışında `istemci.klasor_sil`
+  çağrılıyor
+
+## Gövde resimleri — Evolution tarzı yer tutucu (2026-11-20)
+
+HTML iletilerdeki `<img>` ögeleri düz metin dönüşümünde sessizce atılıyordu;
+resimler hiç görünmüyordu (kurum iletilerindeki logolar, uzak görseller vb.).
+
+### Değişiklikler
+- **`ews.py`** — `Resim` veri modeli (`ad`, `kaynak`, `yer_tutucu`);
+  `Ek.content_id` alanı (EWS `t:ContentId`/`t:ContentLocation`, IMAP
+  `Content-ID` başlığı); `html_metni` artık `<img>` yerine **`[resim: ad]`**
+  yer tutucusu bırakır ve `resimler` listesini doldurur (ad çözümlemesi:
+  eşleşen ek → alt metni → URL/cid dosya adı). Yeni `resim_verisi()`
+  çözümleyici: `data:` gömülü → `http(s)` indirme (401'de NTLM oturumuyla
+  yeniden dener) → MIME'da Content-Id/dosya adı arama → `ek_indir` yedeği
+- **`ui.py`** — yer tutucular tıklanabilir (mavi/altı çizili, imleç el);
+  tıklayınca resim gövdede belirir (büyük resimler pencereye göre
+  küçültülür; Pillow varsa JPEG vb., yoksa Tk'ın PNG/GIF desteği).
+  Okuyucuda **"Resimleri göster (N)"** düğmesi tüm resimleri sırayla
+  yükler; indirilemeyen resim gövdede "görüntülenemedi" olarak belirir.
+  Mesaj değişince eski yükleme sonuçları gövdeye yazılmaz
+- **`imap.py`** — ekler gövdeden önce toplanır (yer tutucu adları ek
+  adlarından gelir); eklerde `content_id`
+- **`requirements.txt`** — `Pillow` (JPEG/WebP vb. gövde resimleri için;
+  yoksa PNG/GIF yine çalışır)
+
+### Testler (hepsi geçti)
+- `tests/resim_test.py` (yeni): yer tutucu üretimi, `resim_verisi`
+  çözümlemesi (data URI, yerel http sunucu, 401→NTLM, cid→MIME, ek yedeği),
+  EWS+IMAP `mesaj_detay` ayrıştırması, Xvfb altında arayüz: tıkla-göster,
+  "Resimleri göster", düğme pasifleşmesi, mesaj geçişinde sıfırlama
+- `imap_yerel_sunucu_test.py` + `ui_smoke.py`: regresyon yok (gerçek sunucu)
+
+## HTML gövde gösterimi — tkinterweb (2026-11-20, akşam)
+
+Okuyucu düz metin yerine artık gövdeyi **gerçek HTML olarak** çiziyor
+(Tkhtml3 tabanlı `tkinterweb`): kalın/italik/renkli yazı, tablolar, fontlar,
+bağlantı biçimleri korunur; dış bağlantılar tarayıcıda açılır.
+
+### Değişiklikler
+- **`ews.py`** — `govde_html_gosterim(mesaj, gecen)`: `<img>`'leri yer
+  tutucu bağlantıya (`postacim-resim:sıra` → `[resim: ad]`) ya da
+  çözüldüyse gömülü `data:` URI'ye çevirir; `script`/`base`/`meta refresh`
+  atılır. Düz metin iletiler kaçırılmış `<pre>` olarak gösterilir.
+  `data_uri_verisi()` dışa açıldı (arayüz gömme/engelleme için)
+- **`ui.py`** — okuyucu `HtmlFrame` oldu (`tkinterweb` yoksa eski `tk.Text`
+  okuyucuya düşer, `self.html_modu`). Yer tutucu bağlantısına tıklama
+  `_html_baglanti_tikla` ile çözülür; çözülen resim Pillow ile
+  küçültülüp PNG `data:` URI olarak gömülür ve sayfa yeniden çizilir.
+  **`request_func` ile dış ağ istekleri engellenir** (uzak resimler,
+  arka plan görselleri yüklenmez — gizlilik); yalnız gömülü `data:`
+  resimlerine izin var. `script` kapalı, `forms`/`objects` kapalı
+- **`requirements.txt`** — `tkinterweb`
+
+### Gövde resimleri akışı (değişmedi)
+Evolution tarzı: önce dosya adı yer tutucusu → tıklayınca resim gövdede →
+"Resimleri göster" düğmesiyle tümü. İndirilemeyen resim "görüntülenemedi"
+notuyla yerinde belirir.
+
+### Testler (hepsi geçti)
+- `tests/resim_test.py`: `govde_html_gosterim` birim testleri; arayüz
+  testleri **iki modda** (düz metin + HTML) — yer tutucu görünümü,
+  tıkla-göster, "Resimleri göster", dış istek engelleme, düğme
+  pasifleşmesi, mesaj geçişinde sıfırlama
+- `imap_yerel_sunucu_test.py` + `ui_smoke.py` (gerçek sunucu): regresyon yok
+
+## Kalan sınırlar
+
+
+- **Okundu/okunmadı işaretleme sunucuya yazılamıyor** (EWS `UpdateItem` bozuk) —
+  istemci sessizce geçiyor, durum çuburunda uyarı gösteriyor
+- **Ek indirme**: sunucuda `GetAttachment` bozuk olduğu için tek ek, mailin tam
+  **MIME içeriğinden** ayrılıyor → indirme sırasında mailin tüm ekleri ağdan
+  geçer, diske **yalnızca tıklanan** yazılır; MIME mesaj başına bir kez çekilir
+  ve oturum boyunca önbelleklenir (8 mail ile sınırlı)
+- OWA tarayıcı dışından kullanılamıyor (TMG form girişini engelliyor) → OWA'ya bağlı
+  bir yedek yol kurmak da mümkün değil
+- Arama istemci tarafında (tüm klasör bellekte) — büyük klasörlerde biraz yavaş
+
+## Sonraki adımlar (opsiyonel)
+- [ ] sunucu yöneticilerinden `UpdateItem` ve `GetAttachment` hatalarının giderilmesi
+      (`GetAttachment` düzelirse ekler tek tek, MIME çekmeden iner)
+- [ ] sunucu yöneticilerinden TMG'de `$` ve `PATCH`/`DELETE` engellerinin kaldırılması
+      (REST API'nin sayfalama ve güncelleme yetenekleri açılır)
+- [ ] EWS `FindItem` düzelirse liste yolu daha hızlı olur (senkronizasyon yerine)
+
+---
+
+# 2026-11-20/21 — Takvim özelliği + hata düzeltmeleri
+
+> **Kaldığımız yer (21.11.2026 02:41):** Takvim sekmesi çalışıyor — Gmail
+> (CalDAV) bağlı ve doğrulandı (28 randevu), Ay/Hafta/Gün görünümleri Evolution
+> gibi çiziliyor. Aşağıdaki "Kalan işler" bölümünden devam edilecek.
+
+## Takvim özelliği (20 Kas akşamı — bu belgeye henüz işlenmemişti)
+
+Tek pencerede **Posta | Takvim** sekmeleri (Evolution tarzı).
+
+### `caldav.py` (yeni, 591 satır) — CalDAV istemcisi
+- Keşif (`kesfet`): `current-user-principal` → `calendar-home-set` → koleksiyonlar;
+  **Google eski uçta bu özelliği vermez** → başlangıç adresi koleksiyon olarak denenir
+- `randevular()` `calendar-query` REPORT (time-range), `randevu_ekle/guncelle/sil`
+  PUT/DELETE; `If-Match` etag; ICS (RFC 5545) ayrıştırma/üretme — bağımlılık yok
+- `RandevuKaydi` alanı EWS `Randevu` ile uyumlu (`item_id`/`change_key`/`gun`)
+
+### `ews.py` — EWS takvimi
+- `Randevu` modeli; takvim klasörü `SyncFolderItems` ile (`FindItem` bozuk olduğu için)
+- `randevu_ekle` (CreateItem), `randevu_sil` (HardDelete),
+  `randevu_guncelle` → **sil + yeniden oluştur** (`UpdateItem` bozuk)
+
+### `config.py` / `ui.py`
+- `takvimler()` kayıt listesi (`hesap.json`, 0600) — `takvim_ekle/guncelle/sil`
+- `_takvim_kur`: görünüm seçici (Ay|Hafta|Gün), ◀/▶/Bugün, Yeni Randevu,
+  Takvim Hesapları, sağda **ajanda** (seçili günün randevuları + detay)
+- Ay ızgarası (6×7), Hafta (7×24, kaydırıcı), Gün (24 saat, kaydırıcı),
+  "şu an" kırmızı çizgisi, hücreye çift tık → Gün görünümü / yeni randevu
+- `RandevuPenceresi` (başlık/tüm gün/tarih-saat/konum/açıklama, düzenle/sil),
+  `TakvimHesapPenceresi` (Gmail/iCloud/Yahoo/Nextcloud şablonlu CalDAV hesabı)
+- Klar kaynak: `_takvim_kaynaklari()` = aktif EWS + kayıtlı tüm CalDAV hesapları
+  (CalDAV, aktif e-posta hesabından bağımsız çalışır)
+
+## 🔧 21.11.2026 düzeltmeleri (canlı doğrulandı)
+
+### 1. Gmail takvim hesabı bağlanamıyordu — WRONG URL
+- **Belirti:** "Bağlantı hatası: … Failed to resolve 'apidata.google.com'"
+- **Kök neden:** `TakvimHesapPenceresi.SABLONLAR["Gmail"]` adresi
+  `https://apidata.google.com/caldav/v2/calendars/default` — **bu host DNS'te yok**
+- Google'ın yeni ucu `apidata.googleusercontent.com/caldav/v2/…` yalnız
+  **OAuth2** kabul ediyor (Basic + uygulama parolası → 401); uygulama parolasıyla
+  çalışan tek uç **eski** `https://www.google.com/calendar/dav/<eposta>/events`
+- **Düzeltmeler:**
+  - `ui.py`: şablon `https://www.google.com/calendar/dav/{eposta}/events`;
+    `_sablon()` ve `_veri_al()` `{eposta}`'yı e-posta alanından dolduruyor
+    (kullanıcı kontrolü: boşsa uyarı, sıraya göre "E-posta boş" önce)
+  - `caldav.py → kesfet()`: `current-user-principal` yoksa erken `return`
+    kaldırıldı; `home`/başlangıç `/user` ile bitiyorsa **`/events` yedeği**
+    deneniyor (Google `/user` başlangıcında çocuk koleksiyon döndürmüyor)
+- **Doğrulama:** keşif + 28 randevu okundu; PUT/DELETE (If-Match 412 → izin var,
+  ekle+sil döngüsü) çalıştı; uçtan uca UI akışı: "Bağlantı başarılı! Takvimler:
+  kullanici@ornek.com" → takvim yüklendi
+
+### 2. "Randevu gün bazında gösterilmiyor"
+- **Kök neden:** `_takvim_sonuc()` veriyi güncelliyor ama **çizim yapmıyordu** —
+  ızgara/ajanda ilk (boş) çizimde kalıyordu; ay/geçiş değişince kendiliğinden
+  görünüyordu
+- **Düzeltme:** `_takvim_sonuc` sonunda `self._takvim_ciz()`
+
+### 3. "Sadece Ay ızgarası görünüyor, Hafta/Gün görünmüyor"
+- **Kök neden (ölçüldü):** içerik çerçevesi (`icerik`) canvas'ın **kardeşi**
+  olarak yaratılıyordu; canvas sonra eklendiğinde **X yığında canvas üstte
+  kalıyor**, içerik arkada çiziliyordu → tuval zemini (`#1c1c1c`) görünüyor,
+  ızgara hiç yoktu. `icerik.lift()` anında düzeltiyordu (kanıt)
+- **Düzeltme:** `icerik = ttk.Frame(canvas)` — içerik canvas'ın **çocuğu**
+  (kanonik desen), hem `_hafta_izgara_kur` hem `_gun_izgara_kur`
+
+### 4. Evolution'a yakın görünüm
+- `_icerigi_genislet(canvas)`: canvas `<Configure>` → pencere öğesi genişliği
+  tuvale eşitlenir → **Gün görünümü tüm genişlikte** (dar kol değil),
+  **Hafta kırpılmadan** (içerik 986px > tuval 934px idi)
+- Hafta **gün başlıkları**: koyu temada `#202124` metin okunmuyordu →
+  `_metin_rengi(tema_zemini)`; bugün `#c5221f` korundu
+- Ay **gün numaraları**: `ttk.Label` tema zemini beyaz hücreyle çakışıyordu
+  (siyah kutu görünüyordu) → `tk.Label` + `bg=arka` (her çizimde)
+
+### Testler (21.11 hepsi geçti)
+- `tests/takvim_ui_test.py`: CalDAV **bağlıyken** "bağlı takvim hesabı yok"
+  uyarısı bekleyen eski varsayım güncellendi; `sys.path` başlığı eklendi
+  (doğrudan `python tests/…` ile çalışıyordu)
+- Çevrimdışı: `coklu_hesap_test`, `hesap_ui_test`, `imap_yerel_sunucu_test`,
+  `resim_test` — ✓; canlı `takvim_ui_test` → **TAKVIM UI OK**
+- Görsel doğrulama: Xvfb + ffmpeg x11grab ile Ay/Hafta/Gün ekran görüntüleri
+
+### Ortam notları
+- Aktif hesap **GMail**'e döndürüldü (canlı test EWS'e çevirmişti)
+- Test kalıntıları temizlendi: CalDAV 28, EWS 6 randevu, `GosterimTesti*` yok
+- Kullanıcının kendi `Test` (21.11.2026 09:00) randevusu **dokunulmadı**
+- **Dikkat:** `/tmp/opencode/bisect.py` stdlib `bislect`'i gölgeliyor —
+  `/tmp/opencode` içindeki betikler "circular import / tkinterweb Random" hatası
+  verir; test betiklerini **temiz dizinde** çalıştır (ör. `/tmp/opencode/tcal/`)
+
+## Kalan işler (21.11) — ✅ 22.11'de tamamlandı
+- [x] **README'ye takvim bölümü** yazıldı (CalDAV kurulumu, Gmail uygulama
+      parolası, eski uç notu) + `DEVAM.md` takvim bölümü aşağıda
+- [x] **Tekrarlayan olaylar (RRULE)** açılıyor — `tekrar.py` ile genişletiliyor
+      (detay: aşağıdaki 22.11 bölümü)
+- [x] **Birden fazla CalDAV hesabı** — kaynak takibi eklendi (`kaynak_id`),
+      silme/güncelleme doğru hesaba gidiyor, yeni randevuda hesap seçimi var
+- [x] CalDAV'da **TZID** destekleniyor (`zoneinfo` ile UTC'ye çevrilir)
+- [x] CalDAV `randevu_ekle` **ETag döndürmüyorsa** PROPFIND ile soruluyor
+- [ ] Google modern uç (OAuth2) desteği — uygulama parolası eskidiğinde gerekecek
+- [x] Takvim `otomatik_yenileme` ile tazeleniyor (Ayarlar → Genel)
+- [x] Ay ızgarasında hücre içi etiketler tema ile uyumlu (stil sistemi
+      `randevu` / `randevu_metin` anahtarlarından geliyor)
+
+---
+
+# 2026-11-22 — Tekrarlayan olaylar, çoklu takvim hesabı, otomatik yenileme
+
+> **Kaldığımız yer (22.11.2026):** Takvim sekmesi olgunlaştı: RRULE (tekrarlayan
+> olay) desteği hem CalDAV hem EWS'te çalışıyor, tekrarlayan randevu
+> **oluşturulabiliyor**, birden çok CalDAV hesabı doğru ayrıştırılıyor,
+> takvim otomatik yenileniyor. README'ye takvim bölümü eklendi.
+
+## 1. Tekrarlayan olaylar (RRULE) — yeni `postacim/tekrar.py`
+
+Tekrar kurallarını ayrıştırıp üreten **bağımlılıksız** yeni modül:
+
+| Desteklenen | Not |
+|---|---|
+| `FREQ=DAILY/WEEKLY/MONTHLY/YEARLY` | `INTERVAL`, `COUNT`, `UNTIL` |
+| `BYDAY` | sıralı biçim de: `2MO` (2. pazartesi), `-1FR` (son cuma) |
+| `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `WKST` | negatif gün numaraları da |
+| `EXDATE` / `RDATE` | hariç tutulan / eklenen tarihler |
+
+- **Hızlı ileri atlama:** sınırsız kurallarda pencereye atlama aritmetik
+  yapılır (2020'den başlayan "her gün" kuralı 2026 penceresinde anında çözülür)
+- `COUNT` varsa atlama yapılmaz — kaçıncı tekrar olduğu baştan sayılmalı
+- `tekrar.kural_ozeti()` → "Her hafta (Pzt, Çar) — 10 kez" (arayüz ipucu)
+- `tekrar.kural_olustur()` → kullanıcı seçiminden RRULE üretimi
+
+### Arayüzde genişletme
+- `Postacim._tekrar_genislet()`: **görünür pencereye** göre (Ay 42 gün,
+  Hafta 7 gün, Gün 1 gün) tekrarlar üretilir; pencere değişince önbellek
+  yeniden hesaplanır
+- Her tekrar için **kopya** kayıt üretilir (`occurrence_id` benzersiz) →
+  ajanda seçimi, "tamamlandı" işareti ve çizim doğru çalışır
+- `_gun_randevulari()` genişletilmiş listeyi kullanır; hafta görünümü de
+  genişletilmiş listeyi çizer
+
+### CalDAV (`caldav.py`)
+- `ics_randevulari()` artık **RRULE / EXDATE / RDATE** satırlarını toplar
+- **TZID desteği:** `DTSTART;TZID=Europe/Istanbul` → `zoneinfo` ile UTC'ye
+  çevrilir (10:00 İstanbul = 07:00Z). `VTIMEZONE` içindeki özel dilimler
+  çözülemezse yerel saat varsayılır
+- `RandevuKaydi` alanları: `rrule`, `exdate`, `rdate`, `kaynak_id`,
+  `kaynak_tur`, `occurrence_id`, `kimlik` (property)
+
+### EWS (`ews.py`)
+- `t:Recurrence` → RRULE dönüşümü (`_rrule_uret`): Daily/Weekly/Monthly
+  (göreli ve mutlak)/Yearly desenleri + `t:Range` → `COUNT`/`UNTIL`
+- `SyncFolderItems` isteğine `<t:Recurrence/>` eklendi (canlı doğrulandı:
+  sunucu kabul ediyor, hata vermiyor)
+
+## 2. Tekrarlayan randevu **oluşturma** (yeni)
+- Randevu penceresine **Tekrar** seçimi: Tek seferlik / Her gün / Her hafta /
+  Her ay / Her yıl + "kaç kez" alanı; özet metni anlık gösterilir
+- CalDAV: ICS'e `RRULE:` satırı yazılır
+- EWS: RRULE → `t:Recurrence` XML'ine çevrilir (`_recurrence_xml`)
+- Mevcut tekrarlı randevu düzenlenirken seçim **kuraldan doldurulur**, seçenek
+  "tek seferlik"e çevrilirse RRULE satırı ICS'ten silinir
+- Düzenleme/silme uyarısı: "Bu randevu tekrarlı — tüm tekrarlar silinecek /
+  değişiklikler tüm tekrarlara uygulanır"
+
+## 3. Düzeltilen gerçek hatalar (CalDAV güncelleme)
+`randevu_guncelle()` yalnız **SUMMARY/LOCATION** alanlarını güncelliyordu:
+- **Başlangıç/bitiş saati değişmiyordu** → `_ics_zaman_degistir()` eklendi
+  (`VALUE=DATE` korunur)
+- **Açıklama hiç güncellenmiyordu** → eklendi (boşaltma da çalışır)
+- RRULE satırı güncellenmiyordu → eklendi (`;` kaçışı bozulmasın diye
+  `_ics_alan_degistir(..., kacis=False)`)
+
+## 4. Birden çok CalDAV hesabı — kaynak takibi
+- Her randevu **kaynağını** taşır (`kaynak_id`, `kaynak_tur`)
+- Silme/güncelleme artık `kaynaklar[0]` yerine **hangi hesaptan geldiyse
+  oraya** gider (`_kaynak_caldav(kaynak_id)`)
+- Yeni randevu penceresinde **takvim hesabı seçimi** komboboxu var
+  ("Gmail (CalDAV)", "Kurum (EWS)")
+
+## 5. ETag yedeği (CalDAV)
+`randevu_ekle`/`randevu_guncelle` sunucudan `ETag` gelmezse `_etag_al()`
+ile **PROPFIND** yapılır (Google PUT cevabında vermeyebilir) → sonraki
+güncellemede `If-Match` doğru gider.
+
+## 6. Takvim otomatik yenileme
+- Ayarlar → Genel → **Takvim otomatik yenileme**: Kapalı / 1 dk / 5 dk / 15 dk
+  (varsayılan 5 dk, `hesap.json` → `takvim_otomatik_yenileme`)
+- Yalnız **takvim sekmesi etkinken** ve devam eden başka iş yokken tazelenir
+  (artımlı: EWS `SyncState`, CalDAV `calendar-query`)
+
+## 7. Takvim renkleri temaya uyuyor (koyu tema)
+- Takvim ızgarası **sabit açık renklerde** kalıyordu (koyu temada beyaz
+  kutular) → `TAKVIM_STIL_KOYU` varsayılanları eklendi; tema **koyu** ise
+  koyu renkler kullanılır, tema değişince ızgara yeniden çizilir
+- Kullanıcı Ayarlar → Takvim'den **kendi rengini seçtiyse** (`takvim_stil`
+  kayıtlıysa) tema değişimi renkleri ezmez — kullanıcı tercihi korunur
+- Ay ızgarasında **başka aya ait hücrelerdeki** randevu etiketi artık
+  hücre rengine değil **randevu rengine** boyanıyor (metin soluk) → diğer
+  aylardaki tekrarlar da görünür
+
+## 8. Testler
+- **Yeni:** `tests/tekrar_test.py` — kural ayrıştırma/üretimi (DAILY/WEEKLY/
+  MONTHLY/YEARLY, COUNT/UNTIL/EXDATE/RDATE, uzak pencere), iCalendar
+  ayrıştırma (RRULE/TZID/EXDATE), EWS `t:Recurrence` dönüşümü, tekrarlı
+  randevu üretimi (ICS + EWS XML), **arayüz** (genişletme, işaret korunumu,
+  kaynak takibi, hesap seçimi) — hepsi geçti
+- **Canlı uçtan uca (Gmail CalDAV):** tekrarlı randevu oluşturuldu →
+  geri okundu (RRULE ayrıştırıldı) → 3 tekrar üretildi (23/30 Kasım,
+  7 Aralık) → **saat değiştirilip güncellendi** (DTSTART/DTEND + RRULE korundu)
+  → silindi. **Test kalıntısı bırakılmadı.**
+- **Canlı EWS:** `t:Recurrence` istek şekli sunucu tarafından kabul edildi
+  (6 randevu çekildi, hata yok)
+- `tests/ui_smoke.py` **düzeltildi:** okuyucu HTML moduna geçince
+  `ayrinti.get()` yok → HTML modunda düz metin gövde mesajdan okunuyor
+  (test 21.11'den beri HTML okuyucu eklendiğinden beri kırıktı)
+
+## Kalan işler
+- [ ] Google modern uç (OAuth2) desteği — uygulama parolası eskidiğinde gerekecek
+- [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
+- [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
+      (şu an tekrarın tamamı siliniyor/değişiyor) — `RECURRENCE-ID` gerekir
+- [ ] Kurum (EWS) takviminde `UpdateItem` bozuk → düzenleme "sil + yeniden oluştur"
+      (yeni kimlik verilir; takvimde kopya oluşabilir)
+- [ ] Takvim randevuları için arama/kategori etiketi
+
+---
+
+# 2026-11-22 (gece) — Genelleştirme ve dağıtıma hazırlık
+
+> **Amaç:** Projeyi tek bir kuruma özgü olmaktan çıkarıp **açık kaynak**
+> olarak, herhangi bir Linux kullanıcısının kurup kullanabileceği hâlde
+> getirmek.
+
+## Kuruma özgü olmaktan çıkarma (genelleştirme)
+- **Varsayılan sunucu kaldırıldı**: boş bırakıldı; kullanıcı Exchange
+  sunucu adresini kendisi yazar (`EwsIstemci` boş sunucuda okunur `EwsHata`
+  verir, `_baglan()` bunu dialogla karşılar)
+- Hesap penceresi: "Kurum sunucusu (EWS)" → **"Exchange sunucusu (EWS)"**;
+  ipuçları genelleştirildi (`mail.kurum.gov.tr`, `KURUM\kullanici`)
+- Tüm metinlerde kurum/alan adı yerine **örnek** adresler kullanılıyor
+
+## Dağıtıma hazırlık
+- **`LICENSE`**: GNU GPL v3 tam metin
+- **`pyproject.toml`**: `postacim` paketi, sürüm 0.1.0, `gui-scripts`
+  giriş noktası, ikonlar paket verisi olarak; **wheel doğrulandı**
+  (`python -m build` → `postacim-0.1.0-py3-none-any.whl`, ikonlar dahil)
+- **`.gitignore`**: venv, `__pycache__`, egg-info, yerel ayar dosyaları
+  (parola içerebilecek `*.local.json`)
+- **README** baştan yazıldı: genel "Exchange (EWS) / IMAP / CalDAV istemcisi"
+  anlatımı, CalDAV kurulumu, lisans ve katkı bölümleri eklendi
+- **GitHub Actions**: testler her push/PR'da otomatik çalışır
+
+## Doğrulama
+- Tüm çevrimdışı testler + canlı arayüz testleri geçti
+- Wheel `python -m build` ile sorunsuz üretildi
+
+## Kalan işler (yayın öncesi)
+- [ ] Uygulama ikonu (`postacim/ikonlar/` içindeki düğme ikonları var;
+      uygulama için 128×128 PNG gerekli)
+- [ ] Sürüm bilgisi tek yerde (`pyproject.toml` + `UYGULAMA_ADI`/sürüm
+      sabiti) — şu an sürüm yalnız pyproject'ta
+- [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)

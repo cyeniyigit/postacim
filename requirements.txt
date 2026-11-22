@@ -1,0 +1,5 @@
+requests>=2.31
+requests-ntlm>=1.3
+sv-ttk>=2.5
+Pillow>=10  # JPEG vb. gövde resimleri için (PNG/GIF Tk'ta da çalışır)
+tkinterweb>=2.5  # HTML gövde gösterimi (Tkhtml3); yoksa düz metin okuyucu
