@@ -87,13 +87,48 @@ exec "$VPY" -m $AD "\$@"
 EOF
 chmod +x "$BASLATICI"
 
+# --------------------------------------------------------------- simge
+SIMGE_DIZIN="$HOME/.local/share/icons/hicolor"
+SIMGE_KAYNAK="$DIZIN/postacim/ikonlar/uygulama.png"
+SIMGE_SVG="$DIZIN/data/icons/hicolor/scalable/apps/postacim.svg"
+SIMGE_AD="postacim"
+
+if [ -f "$SIMGE_KAYNAK" ]; then
+    echo "→ Simge kuruluyor…"
+    mkdir -p "$SIMGE_DIZIN"
+    "$VPY" - "$SIMGE_KAYNAK" "$SIMGE_DIZIN" "$SIMGE_AD" <<'PY' || true
+import os, sys
+from PIL import Image
+
+kaynak, hedef, ad = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    resim = Image.open(kaynak).convert("RGBA")
+except Exception as exc:
+    print(f"   simge okunamadı: {exc}")
+    raise SystemExit(0)
+for boyut in (16, 24, 32, 48, 64, 128, 256):
+    yol = os.path.join(hedef, f"{boyut}x{boyut}", "apps")
+    os.makedirs(yol, exist_ok=True)
+    resim.resize((boyut, boyut), Image.LANCZOS).save(os.path.join(yol, f"{ad}.png"))
+print(f"   {len((16, 24, 32, 48, 64, 128, 256))} boyut üretildi")
+PY
+    if [ -f "$SIMGE_SVG" ]; then
+        mkdir -p "$SIMGE_DIZIN/scalable/apps"
+        cp -f "$SIMGE_SVG" "$SIMGE_DIZIN/scalable/apps/$SIMGE_AD.svg" 2>/dev/null || true
+    fi
+    # Simge önbelleğini tazele (varsa)
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f -t "$SIMGE_DIZIN" >/dev/null 2>&1 || true
+    fi
+fi
+
 cat > "$DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Postacım
 Comment=E-posta ve takvim istemcisi (Exchange/EWS, IMAP, CalDAV)
 Exec=$BASLATICI
-Icon=mail-unread
+Icon=$SIMGE_AD
 Terminal=false
 Categories=Network;Email;
 StartupNotify=true

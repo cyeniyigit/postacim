@@ -13,6 +13,8 @@ Posta (EWS / IMAP)  +  Takvim (EWS / CalDAV)  —  tek pencerede
 
 ## Ekran görüntüleri
 
+<img src="belge/simge.png" width="96" align="right" alt="Postacım simgesi">
+
 **Posta** — hesap ağacı, mesaj listesi ve HTML okuyucu:
 
 ![Posta ekranı](belge/ekran-posta.png)

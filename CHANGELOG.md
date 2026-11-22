@@ -8,6 +8,10 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 İlk açık kaynak sürümü.
 
 ### Eklenen
+- **Uygulama simgesi**: zarf + pull motifli, 256×256 PNG (`postacim/ikonlar/
+  uygulama.png`) ve vektör SVG; `tools/ikon_olustur.py` betiğiyle yeniden
+  üretilebilir. `kur.sh` 16–256 boyutlarını üretip `~/.local/share/icons/`
+  altına kurar, uygulama menüsü girdisi `Icon=postacim` olur
 - **Kurulum betiği (`kur.sh`)**: sanal ortamı oluşturur, bağımlılıkları kurar,
   uygulamayı kurar, `~/.local/bin/postacim` başlatıcısı ve uygulama menüsü
   girdisi (`.desktop`) oluşturur; `--kaldir` ile kaldırma, `--gelistirici`
