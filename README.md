@@ -11,6 +11,20 @@ destekli, Tkinter arayüzlü, hafif ve açık kaynak.
 Posta (EWS / IMAP)  +  Takvim (EWS / CalDAV)  —  tek pencerede
 ```
 
+## Ekran görüntüleri
+
+**Posta** — hesap ağacı, mesaj listesi ve HTML okuyucu:
+
+![Posta ekranı](belge/ekran-posta.png)
+
+**Takvim** — Ay görünümü; tekrarlayan olaylar (haftalık/günlük) otomatik
+genişletilerek her tekrarı ayrı ayrı gösterilir:
+
+![Takvim ekranı](belge/ekran-takvim.png)
+
+> Ekran görüntüleri **sentetik** verilerle alınmıştır; gerçek mesaj,
+> hesap veya takvim bilgisi içermez.
+
 ## Neden böyle bir istemci?
 
 Birçok kurumun Exchange sunucusunda **IMAP (143/993) ve SMTP
