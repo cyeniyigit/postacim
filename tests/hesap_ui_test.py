@@ -301,6 +301,22 @@ def main() -> int:
             kontrol(p.tk.call("tk", "appname") == "postacim",
                     "Hakkında penceresi de aynı WM_CLASS")
             p.destroy()
+
+        # --- Yardım menüsünde kaldırma öğesi ---
+        yardim_ogeleri = []
+        for i in range(uygulama.ust_menu.index("end") + 1):
+            if uygulama.ust_menu.type(i) != "cascade":
+                continue
+            if uygulama.ust_menu.entrycget(i, "label") != "Yardım":
+                continue
+            alt = uygulama.nametowidget(uygulama.ust_menu.entrycget(i, "menu"))
+            yardim_ogeleri = [
+                alt.entrycget(j, "label")
+                for j in range(alt.index("end") + 1)
+                if alt.type(j) == "command"
+            ]
+        kontrol("Postacım'ı Kaldır…" in yardim_ogeleri,
+                f"Yardım menüsünde kaldırma öğesi ({yardim_ogeleri})")
     finally:
         try:
             uygulama.destroy()

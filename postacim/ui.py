@@ -499,6 +499,11 @@ class Postacim(tk.Tk):
             label="Hakkında", image=self.ikon["hakkinda"], compound="left",
             command=self.hakkinda,
         )
+        yardim.add_separator()
+        yardim.add_command(
+            label="Postacım'ı Kaldır…", image=self.ikon.get("sil"),
+            compound="left", command=self.kaldir,
+        )
         menü.add_cascade(label="Yardım", menu=yardim)
         self.config(menu=menü)
         self.ust_menu = menü  # test için
@@ -3586,6 +3591,43 @@ class Postacim(tk.Tk):
     def hakkinda(self):
         """Hakkında penceresini açar (logolu, sürüm bilgili)."""
         HakkindaPenceresi(self)
+
+    def kaldir(self):
+        """Uygulamayı kaldırır (kurulmuş kaldırıcı betiği çalıştırılır)."""
+        betik = os.path.expanduser("~/.local/bin/postacim-kaldir")
+        if not os.path.exists(betik):
+            messagebox.showinfo(
+                "Kaldırma",
+                "Postacım kurulum betiğiyle kurulmamış görünüyor.\n\n"
+                "Elle kaldırmak için:\n"
+                "  rm -rf ~/.local/share/postacim "
+                "~/.local/share/applications/postacim.desktop\n"
+                "  rm -f ~/.local/bin/postacim\n"
+                "  rm -rf ~/.config/postacim   # ayarlar (parola içerir)",
+            )
+            return
+        if not messagebox.askyesno(
+            "Postacım'ı Kaldır",
+            "Postacım kaldırılsın mı?\n\n"
+            "• Uygulama, menü girdisi ve simgeler silinir.\n"
+            "• Hesaplarınız ve ayarlarınız SİLİNMEZ "
+            "(silmek için: postacim-kaldir --ayarlar)\n\n"
+            "Kaldırma, uygulamayı kapatmadan etkin olmaz; "
+            "işlem bitince pencereyi kapatıp yeniden açabilirsiniz.",
+        ):
+            return
+        try:
+            subprocess.run([betik], check=False)
+        except Exception as exc:
+            messagebox.showerror("Kaldırma hatası", str(exc))
+            return
+        self.durum.set("Postacım kaldırıldı — pencereyi kapatabilirsiniz.")
+        messagebox.showinfo(
+            "Kaldırıldı",
+            "Postacım kaldırıldı.\n\n"
+            "Bu pencereyi kapatıp yeniden açarsanız uygulama yeniden "
+            "kurulmuş gibi davranır; kaldırma tamamlanmış sayılır.",
+        )
 
     def _kapat(self):
         self.ayarlar.kaydet()

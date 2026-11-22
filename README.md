@@ -71,6 +71,28 @@ Sonra terminalden `postacim` yazıp çalıştırabilir ya da menüden açabilirs
 > her makinede farklı Python/derleyici vardır. `kur.sh` onu sizin için
 > oluşturur. Kaldırmak için: `./kur.sh --kaldir`
 
+### Kaldırma
+
+```bash
+postacim-kaldir            # uygulamayı kaldırır (ayarları sorar)
+postacim-kaldir --tumu     # hesaplar/ayarlar dahil her şeyi siler
+postacim-kaldir --ayarlar  # yalnız hesapları ve ayarları siler
+```
+
+Kaldırıcı, kurulumdan sonra `~/.local/bin/postacim-kaldir` olarak durur ve
+**kaynak klasörü silinmiş olsa bile** çalışır. Sildikleri:
+
+| Ne | Nerede |
+|---|---|
+| Başlatıcı | `~/.local/bin/postacim` |
+| Menü girdisi | `~/.local/share/applications/postacim.desktop` |
+| Simgeler | `~/.local/share/icons/hicolor/*/apps/postacim.*` |
+| Uygulama + sanal ortam | `~/.local/share/postacim/` |
+| Hesaplar/ayarlar *(opsiyonel)* | `~/.config/postacim/` |
+
+Uygulamanın içinden de kaldırılabilir: **Yardım → Postacım'ı Kaldır…**
+(ayarlar varsayılan olarak **korunur** — kayıtlı parolalar silinmez).
+
 ### Kaynaktan çalıştırma (geliştiriciler)
 
 ```bash

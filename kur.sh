@@ -3,7 +3,7 @@
 #
 #   ./kur.sh                 → kullanıcı dizinine kurar (~/.local)
 #   ./kur.sh --gelistirici   → yalnız sanal ortam + bağımlılıklar (geliştirme)
-#   ./kur.sh --kaldir        → kurulumu kaldırır
+#   ./kur.sh --kaldir        → kurulumu kaldırır (kurulmuş kaldırıcı varsa o çalışır)
 #
 # Sanal ortam (venv) depoya dâhil edilmez: kurulum betiği onu kullanıcının
 # dizininde oluşturur, böylece proje klasörü salt-okunur olsa bile kurulur.
@@ -17,26 +17,37 @@ BINDIR="$HOME/.local/bin"
 MASAUSTU="$HOME/.local/share/applications"
 DESKTOP="$MASAUSTU/$AD.desktop"
 BASLATICI="$BINDIR/$AD"
+KALDIRICI="$BINDIR/$AD-kaldir"
 
 yesno=1
 gelistirici=0
 kaldir=0
+EK_ARG=""
 for arg in "$@"; do
     case "$arg" in
         --gelistirici) gelistirici=1; yesno=0 ;;
         --kaldir)      kaldir=1 ;;
-        -h|--help)     sed -n '2,12p' "$0"; exit 0 ;;
-        *) echo "Bilinmeyen seçenek: $arg" >&2; exit 2 ;;
+        -h|--help)     sed -n '2,9p' "$0"; exit 0 ;;
+        *) EK_ARG="$EK_ARG $arg" ;;
     esac
 done
 
 # ------------------------------------------------------------------ kaldırma
 if [ "$kaldir" -eq 1 ]; then
-    rm -f "$BASLATICI" "$DESKTOP"
-    rm -rf "$KURUM"
-    echo "✓ Postacım kaldırıldı."
-    echo "  (ayarlarınız ~/.config/$AD altında duruyor; silmek isterseniz: rm -rf ~/.config/$AD)"
-    exit 0
+    # Kurulmuş kaldırıcı varsa onu kullan (kaynak klasörü silinmiş olabilir)
+    if [ -x "$KALDIRICI" ]; then
+        # shellcheck disable=SC2086
+        exec "$KALDIRICI" $EK_ARG
+    fi
+    # Yoksa betiği kaynaktan çalıştır
+    if [ -f "$DIZIN/tools/kaldir.sh" ]; then
+        # shellcheck disable=SC2086
+        exec bash "$DIZIN/tools/kaldir.sh" $EK_ARG
+    fi
+    echo "!! Kaldırıcı bulunamadı. Elle silebilirsiniz:" >&2
+    echo "   rm -f $BASLATICI $DESKTOP" >&2
+    echo "   rm -rf $KURUM" >&2
+    exit 1
 fi
 
 # ------------------------------------------------------------------ python
@@ -136,6 +147,14 @@ StartupWMClass=postacim
 EOF
 chmod +x "$BASLATICI"
 
+# --------------------------------------------------------------- kaldırıcı
+# Kaynak klasörü silinse bile kaldırma yapılabilsin diye bağımsız kaldırıcı
+# ~/.local/bin/postacim-kaldir olarak kurulur.
+if [ -f "$DIZIN/tools/kaldir.sh" ]; then
+    cp -f "$DIZIN/tools/kaldir.sh" "$KALDIRICI"
+    chmod +x "$KALDIRICI"
+fi
+
 # Menüde görünmesi için (çoğu masaüstü ortamı bunu izler)
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$MASAUSTU" >/dev/null 2>&1 || true
@@ -148,3 +167,4 @@ echo "  Menü girdisi: Postacım"
 echo "  Ayarlar   : ~/.config/$AD"
 echo
 echo "  Terminalden başlatmak için:  postacim"
+echo "  Kaldırmak için             :  postacim-kaldir"

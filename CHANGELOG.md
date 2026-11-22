@@ -3,6 +3,15 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.2] — 2026-11-22
+
+### Eklenen
+- **Kaldırıcı**: `postacim-kaldir` (kurulumdan sonra `~/.local/bin/` altına
+  kurulur, kaynak klasörü silinse bile çalışır). `--tumu` ile hesaplar ve
+  ayarlar da silinir, `--ayarlar` yalnız ayarları siler
+- **Uygulama içinden kaldırma**: Yardım → "Postacım'ı Kaldır…"
+- `kur.sh --kaldir` artık simgeleri de kaldırır ve ayarları sorar
+
 ## [0.1.1] — 2026-11-22
 
 ### Eklenen
