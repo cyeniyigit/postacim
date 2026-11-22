@@ -2009,7 +2009,7 @@ class Postacim(tk.Tk):
         else:
             yardim = (
                 "Kurumunuzda IMAP/SMTP portları dışarıdan kapalı; e-posta\n"
-                "EWS üzerinden okunacak. NTLM kullanıcı adı 'KURUM\\kullanici' olmalı."
+                "EWS üzerinden okunacak. NTLM kullanıcı adı 'TARIM\\kullanici' olmalı."
             )
             kullanici_etiket, parola_etiket = "Kullanıcı:", "Parola:"
         ttk.Label(
@@ -3422,7 +3422,13 @@ class Postacim(tk.Tk):
                 label="Klasörü Sil…", image=self.ikon["sil"], compound="left",
                 command=lambda: self.klasor_sil(kimlik, ad),
             )
-        return menu if menu.index("end") is not None else None
+        # Boş menüde `index("end)"` sürüme göre None ya da TclError verir;
+        # her iki durumda da "öğe yok" demektir.
+        try:
+            bos = menu.index("end") is None
+        except tk.TclError:
+            bos = True
+        return None if bos else menu
 
     def klasor_sil(self, kimlik: str, ad: str):
         """Klasörü (Gmail etiketini) silmek için onay ister ve arka planda siler."""

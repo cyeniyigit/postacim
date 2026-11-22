@@ -74,7 +74,8 @@ def main() -> int:
         yol = f"/Microsoft-Server-ActiveSync/Folder?Cmd=FolderSync&User={user_q}"
         try:
             r = s.get(f"https://{SUNUCU}{yol}", timeout=30)
-            print(f"   PV={sürüm} → {r.status_code} ({len(r.content)} bayt) {re.sub(r'\\s+',' ', r.text[:260])}")
+            ozet = re.sub(r"\s+", " ", r.text[:260])
+            print(f"   PV={sürüm} → {r.status_code} ({len(r.content)} bayt) {ozet}")
         except Exception as exc:
             print(f"   PV={sürüm} → {type(exc).__name__}: {str(exc)[:70]}")
 
