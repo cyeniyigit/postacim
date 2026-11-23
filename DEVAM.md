@@ -1131,3 +1131,38 @@ oluşturma/silme eksik bıraktı).
   sonrası seçim ilk klasöre düşer (silme ile aynı mekanizma).
 - EWS `UpdateFolder` canlı sunucuda denenmedi (testler mock'lu);
   `CreateFolder`/`FindFolder` gibi kullanıcı onayında canlı doğrulanacak.
+
+## Gmail aramasında sayfa silme sonrası seçim çökmesi (2026-11-23)
+
+**Rapor:** "Gmail'de 'Hepsi' araması yaptım; ilk sayfayı Shift ile seçip
+sildim, ikinci sayfa yüklenince fare ile seçerken program kırılıp kapandı."
+
+### Teşhis
+- Sahte istemciyle birebir senaryo (`tests/silme_sayfa_test.py`):
+  aramalı sayfalı sonuç → toplu sil → yeni sayfa → seçim → **yeniden
+  üretilemedi** → çökme Tk/Tcl düzeyinde (mock'ta olmayan gerçek
+  zamanlama/X ortamı).
+- En olursu yol: toplu taşıma sonrası `yenile` sonucu geldiğinde
+  `_mesajlari_doldur` listeyi `delete` + `insert` ile **yeniden kurarken**
+  kullanıcı listede fare/Shift seçim sürüklemesi sürüyordu; Tcl'de seçim
+  sürüklemesi sırasında öğe silinmesi bazı Tk sürümlerinde çökertiyor.
+- Ayrıca Tk geri çağrı hataları üretimde yalnız terminale yazılıyordu
+  (menüden açılan uygulamada iz yok) → hata görünmez.
+
+### Değişiklikler
+- **`ui.py → _mesajlari_doldur`**: kullanıcı listede fare düğmesini basılı
+  tutarken liste yeniden kurulmaz — sonuç `_bekleyen_doldurma`'da bekler,
+  `<ButtonRelease-1>`'de uygulanır (`_bekleyen_doldurma_uygula`; bayrak
+  takılı kalırsa ~3 sn sonra yine uygulanır).
+  Bağlantılar: `<Button-1>` → `_mouse_bastı` (bayrak + zaman), `<ButtonRelease-1>`
+  → `_mouse_birakti`.
+- **`ui.py → _tk_hata_yakala`** (yeni, `report_callback_exception` olarak
+  kurulu): beklenmeyen Tk hataları `~/.local/state/postacim/hata.log`a yazılır
+  (README'de uzun zamandır vaat edilen yol; kod artık gerçekten yazıyor,
+  400 KB'de döner) + kullanıcıya kısa açıklama diyalogu; uygulama kapanmaz.
+- `_secili_mesajlar`: beklenmedik satır kimliği gelirse atlanır (çökmez).
+
+### Testler (hepsi geçti)
+- `silme_sayfa_test.py` (**yeni**, `run_all.sh`'e eklendi): kullanıcı
+  senaryosu + sayfa küçülme yolu + fare basılıyken erteleme / bırakınca
+  uygulama + `hata.log` yazımı (XDG_STATE_HOME test dizinine yönlendirilir)

@@ -3,6 +3,30 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.11] — 2026-11-23
+
+### Düzeltmeler
+- **Mesaj listesi, fare seçimi sürerken yeniden kurulmaz.** Toplu silme/
+  taşıma sonrası yeni sayfa yüklenirken kullanıcı listede seçim yapıyorsa
+  (Shift ile çoklu seçim vb.) liste `delete`+`insert` ile anında yeniden
+  kuruluyordu; bu Tcl/Tk seçim sürüklemesiyle çakışıp bazı ortamlarda
+  çökmeye yol açabiliyordu (kullanıcı raporu: Gmail arama sonuçları →
+  1. sayfayı sil → 2. sayfa → fare ile seçerken program kapandı). Artık
+  sonuç, fare düğmesi bırakılınca uygulanır (en fazla ~3 sn bekler).
+- **Beklenmeyen Tk hataları artık kayda alınıp gösterilir.** Tk varsayılanında
+  arayüz geri çağrılarındaki hatalar yalnız terminale yazılır; menüden
+  açılan uygulamada hiçbir iz kalmıyordu. Artık iz
+  `~/.config/postacim/hata.log`a yazılır ve kullanıcıya kısa bir açıklama
+  gösterilir; uygulama kapanmaz.
+- Çoklu seçimde beklenmedik satır kimliği gelirse seçim çökmesin
+  (`int()` dönüşümü korunumlu).
+
+### Testler
+- `tests/silme_sayfa_test.py` (yeni) — kullanıcı senaryosu sahte istemciyle:
+  aramalı sayfalı sonuçlar → ilk sayfayı topluca sil → yeni sayfa → seçim;
+  sayfa küçülme yolu; **fare basılıyken liste yeniden kurulmaz, bırakınca
+  uygulanır** (Xvfb).
+
 ## [0.1.10] — 2026-11-23
 
 ### Eklenen

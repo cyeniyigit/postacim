@@ -7,11 +7,13 @@ import copy
 import html as html_mod
 import io
 import os
+import traceback
 import queue
 import re
 import shutil
 import subprocess
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from calendar import monthrange
@@ -217,6 +219,15 @@ class Postacim(tk.Tk):
         self._otomatik_bekliyor = False  # otomatik yenileme sonucu dönmediyse yeni tik atlanır
         self._is_sayaci = 0  # sonuçları henüz işlenmemiş arka plan işi sayısı
         self._secim_olayi_yut = 0  # yenilemeden gelen yapay seçim olayları
+        # Kullanıcı mesaj listesinde fare düğmesini basılı tutarken listeyi
+        # yeniden kurmayız (delete+insert, Tcl seçim sürüklemesiyle
+        # çakışıp çökmeye yol açabilir); sonuç düğme kalkınca uygulanır.
+        self._mouse_basili = False
+        self._mouse_zamani = 0.0
+        self._bekleyen_doldurma = None
+        # Tk geri çağrı hataları varsayılan olarak yalnız terminale yazılır;
+        # menüden açılan uygulamada iz kalmaz → kayda al ve göster.
+        self.report_callback_exception = self._tk_hata_yakala
 
         # Tema widget'lar kurulmadan uygulanmali
         if sv_ttk is not None:
@@ -628,6 +639,9 @@ class Postacim(tk.Tk):
         self.liste.bind("<Delete>", lambda e: self.sil())
         self.liste.bind("<Button-3>", self._mesaj_menusu)
         self.liste.bind("<Control-c>", lambda e: self.kopyala() or "break")
+        # Seçim sürüklemesi sürerken liste yeniden kurulmasın (çökme önlemi)
+        self.liste.bind("<Button-1>", self._mouse_bastı)
+        self.liste.bind("<ButtonRelease-1>", self._mouse_birakti)
         self.ana.add(orta, weight=1)
 
         # --- sağ: okuyucu ---
@@ -2368,6 +2382,45 @@ class Postacim(tk.Tk):
             self.is_kuyrugu.put(("hata", str(exc)))
         except Exception as exc:  # beklenmeyen
             self.is_kuyrugu.put(("hata", f"Beklenmeyen hata: {exc}"))
+
+    def _tk_hata_yakala(self, exc_type, exc, tb):
+        """Tk geri çağrılarındaki beklenmeyen hataları kayda alıp gösterir.
+
+        Tk varsayılanında bu hatalar yalnız terminale yazılır; menüden
+        açılan uygulamada hiçbir iz kalmaz ve hatanın kaynağı bilinemez.
+        İz `~/.local/state/postacim/hata.log`a eklenir (dosya 400 KB'yi
+        aşarsa eskisi silinir) ve kullanıcıya kısa bir açıklama gösterilir;
+        uygulama kapanmaz.
+        """
+        metin = "".join(traceback.format_exception(exc_type, exc, tb))
+        try:
+            gunluk_dizin = os.path.join(
+                os.environ.get("XDG_STATE_HOME", "")
+                or os.path.join(os.path.expanduser("~"), ".local", "state"),
+                "postacim",
+            )
+            os.makedirs(gunluk_dizin, exist_ok=True)
+            gunluk = os.path.join(gunluk_dizin, "hata.log")
+            if os.path.exists(gunluk) and \
+                    os.path.getsize(gunluk) > 400_000:
+                os.remove(gunluk)
+            with open(gunluk, "a", encoding="utf-8") as f:
+                f.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} =====\n")
+                f.write(metin)
+        except OSError:
+            gunluk = None  # kayıt yazılamıyorsa en azından uygulama yaşasın
+        try:
+            self.durum.set("Beklenmeyen hata (ayrıntılar hata.log'da)")
+            kisalt = metin if len(metin) <= 1500 else "…" + metin[-1500:]
+            messagebox.showerror(
+                "Beklenmeyen hata",
+                "Bir işlem hatayla sonuçlandı; uygulama kapanmadı.\n\n"
+                + (f"Ayrıntılar şuraya yazıldı: {gunluk}\n\n" if gunluk else "")
+                + kisalt,
+            )
+        except Exception:
+            pass  # diyalog gösterilemediyse sessizce sürdür
+
     def _kuyruk_yokla(self):
         try:
             while True:
@@ -3171,6 +3224,12 @@ class Postacim(tk.Tk):
         return ("mesajlar", mesajlar, toplam)
 
     def _mesajlari_doldur(self, mesajlar, toplam, durum_yaz: bool = True):
+        if self._mouse_basili:
+            # Fare seçim sürüklemesi sürerken listeyi yeniden kurmak
+            # Tcl çökmesine yol açabilir → düğme kalkınca uygula.
+            self._bekleyen_doldurma = (mesajlar, toplam, durum_yaz)
+            self.after(120, self._bekleyen_doldurma_uygula)
+            return
         # Yenileme öncesi seçim ve kaydırma konumu korunur; otomatik
         # yenilemede liste zıplamaz (polling'li arayüzde scroll sıfırlanmasın).
         secili_kimlikler = set()
@@ -3222,11 +3281,32 @@ class Postacim(tk.Tk):
         self.sayfa_no = yeni
         self._mesajlari_cek_ile(tazele=False)
 
+    def _bekleyen_doldurma_uygula(self):
+        """Fare bırakıldıysa bekleyen mesaj listesini kurar; basılıysa bekler."""
+        if self._mouse_basili and time.time() - self._mouse_zamani < 3:
+            self.after(120, self._bekleyen_doldurma_uygula)
+            return
+        self._mouse_basili = False  # bayrak takılı kaldıysa bırak
+        bekleyen = self._bekleyen_doldurma
+        self._bekleyen_doldurma = None
+        if bekleyen is not None:
+            self._mesajlari_doldur(*bekleyen)
+
+    def _mouse_bastı(self, _olay=None):
+        self._mouse_basili = True
+        self._mouse_zamani = time.time()
+
+    def _mouse_birakti(self, _olay=None):
+        self._mouse_basili = False
+
     def _secili_mesajlar(self) -> list[Mesaj]:
         """Seçili satırlardaki mesajları sırayla döndürür (çoklu seçim)."""
         sonuc = []
-        for s in sorted(self.liste.selection(), key=int):
-            i = int(s)
+        for s in self.liste.selection():
+            try:
+                i = int(s)
+            except ValueError:
+                continue  # beklenmedik satır kimliği — çökmesin
             if 0 <= i < len(self.mesajlar):
                 sonuc.append(self.mesajlar[i])
         return sonuc
