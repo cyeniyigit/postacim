@@ -3,6 +3,23 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.7] — 2026-11-23
+
+### Değişen
+- **Dosya ekleme ve kaydetme pencereleri artık masaüstünün yerel dosya
+  seçicisiyle açılıyor.** Tk'nin sade penceresi yerine GNOME/XFCE/MATE'de
+  `zenity` (yerler çubuğu, arama, son kullanılanlar, yer imleri), KDE'de
+  `kdialog` kullanılır; ikisi de yoksa eski `filedialog`a düşülür.
+  `POSTACIM_DOSYA_SECICI=tk|zenity|kdialog` ile seçici zorlanabilir.
+- **Ek seçiminde birden çok dosya** seçilebilir; belge, tablo, sunu, resim,
+  arşiv ve e-posta süzgeçleri eklendi. Açılamayan dosya için hata gösterilir.
+- Son kullanılan dizin hatırlanır (ilk açılışta İndirilenler). Ek kaydetme ve
+  "Mesajı farklı kaydet" aynı dizinle açılır; eksik uzantı (.eml/.bin) eklenir.
+
+### Eklenen
+- `tests/dosya_secici_test.py` — süzgeç çevirisi, seçici zorlama,
+  zenity/kdialog çıktısının çözümlenmesi, iptal ve tk yedeği testleri.
+
 ## [0.1.6] — 2026-11-23
 
 ### Düzeltilen

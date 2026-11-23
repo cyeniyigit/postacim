@@ -921,3 +921,48 @@ güncellemede `If-Match` doğru gider.
 - [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
 - [ ] Takvim randevuları için arama/kategori etiketi
 - [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)
+
+---
+
+# 2026-11-23 — Dosya seçici: yerel masaüstü iletişim kutusu
+
+> **Kaldığımız yer:** Ek ekleme ve dosya kaydetme, Tk'nin kendi sade
+> `filedialog` penceresiyle yapılıyordu; yerler çubuğu, arama, son
+> kullanılanlar ve çoklu seçim yoktu. Kullanıcı "daha işlevli ve kullanıcı
+> dostu" bir seçici istedi.
+
+## 1. Yaklaşım
+- Tk'nin penceresini yeniden yazmak yerine **masaüstünün kendi seçicisi**
+  kullanıldı: GNOME/XFCE/MATE'de `zenity` (GTK dosya seçici), KDE'de
+  `kdialog`. İkisi de yoksa eski `filedialog`a düşülür.
+- Yeni modül: `postacim/dosya_secici.py` (`dosya_ac`, `dosya_ac_coklu`,
+  `dosya_kaydet`).
+- Seçici `POSTACIM_DOSYA_SECICI=tk|zenity|kdialog` ile zorlanabilir; testler
+  `tk` ile deterministik çalışır.
+
+## 2. Değişiklikler
+- `ui.py`: üç çağrı noktası (`ek_ekle`, `_ek_kaydet`, `farkli_kaydet`) yeni
+  yardımcıya bağlandı; `filedialog` içe aktarımı kaldırıldı.
+- Ek seçimi artık **çoklu**: seçilen her dosya tek tek okunur; açılamayan
+  dosya için `messagebox` hatası gösterilir, diğerleri eklenmeye devam eder.
+- Ek seçimine belge/tablo/sunu/resim/arşiv/e-posta süzgeçleri eklendi.
+- Son kullanılan dizin süreç içinde hatırlanır; ilk açılışta İndirilenler
+  (yoksa ev dizini). Kaydetmede eksik uzantı (`.eml`, `.bin`) tamamlanır.
+
+## 3. Testler
+- Yeni `tests/dosya_secici_test.py`: zenity/kdialog süzgeç biçimi, seçici
+  zorlama, tek/çoklu çıktı çözümleme, iptal, uzantı ekleme ve zenity
+  başlatılamadığında tk yedeği.
+- `tests/ui_smoke.py`: canlı testte pencere açılmasın diye `tk` seçiciye
+  sabitlendi.
+- `tests/run_all.sh` listesine eklendi; tüm çevrimdışı testler geçti.
+- `zenity` seçenekleri Xvfb altında denendi (aç/kaydet pencereleri hatasız
+  açıldı).
+
+## Kalan işler
+- [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
+      (`RECURRENCE-ID`)
+- [ ] Google modern uç (OAuth2) desteği
+- [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
+- [ ] Takvim randevuları için arama/kategori etiketi
+- [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)

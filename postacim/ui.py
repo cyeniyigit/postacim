@@ -16,7 +16,7 @@ import tkinter as tk
 import webbrowser
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 import requests
 
@@ -31,6 +31,7 @@ except ImportError:
     HtmlFrame = None  # kurulu değilse düz metin okuyucu kullanılır
 
 from .config import Ayarlar, KisiDefteri
+from . import dosya_secici
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
@@ -3632,8 +3633,8 @@ class Postacim(tk.Tk):
         return ("ek", ek, self.istemci.ek_indir(ek))
 
     def _ek_kaydet(self, ek, veri):
-        hedef = filedialog.asksaveasfilename(
-            title="Eki kaydet", initialfile=ek.ad, defaultextension=".bin"
+        hedef = dosya_secici.dosya_kaydet(
+            "Eki kaydet", baslangic=ek.ad, varsayilan_uzanti=".bin"
         )
         if not hedef:
             return
@@ -3836,11 +3837,11 @@ class Postacim(tk.Tk):
             return
         mesaj = self.secili
         temiz = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", mesaj.konu or "mesaj")
-        hedef = filedialog.asksaveasfilename(
-            title="Mesajı farklı kaydet",
-            initialfile=f"{temiz[:70]}.eml",
-            defaultextension=".eml",
-            filetypes=[("E-posta (.eml)", "*.eml"), ("Tüm dosyalar", "*.*")],
+        hedef = dosya_secici.dosya_kaydet(
+            "Mesajı farklı kaydet",
+            baslangic=f"{temiz[:70]}.eml",
+            varsayilan_uzanti=".eml",
+            turler=[("E-posta (.eml)", "*.eml"), ("Tüm dosyalar", "*.*")],
         )
         if not hedef:
             return
@@ -4756,13 +4757,24 @@ class YeniPostaPenceresi(tk.Toplevel):
         self.focus_set()
 
     def ek_ekle(self):
-        yol = filedialog.askopenfilename(title="Ek seç")
-        if not yol:
-            return
-        with open(yol, "rb") as f:
-            veri = f.read()
-        self.ekler.append((os.path.basename(yol), veri, "application/octet-stream"))
-        self.ek_listesi.insert("end", os.path.basename(yol))
+        yollar = dosya_secici.dosya_ac_coklu(
+            "Ek seç", turler=dosya_secici.EK_TURLERI
+        )
+        eklenen = 0
+        for yol in yollar:
+            try:
+                with open(yol, "rb") as f:
+                    veri = f.read()
+            except OSError as hata:
+                messagebox.showerror("Ek eklenemedi", f"{yol}\n{hata}")
+                continue
+            self.ekler.append(
+                (os.path.basename(yol), veri, "application/octet-stream")
+            )
+            self.ek_listesi.insert("end", os.path.basename(yol))
+            eklenen += 1
+        if eklenen:
+            self.ana.durum.set(f"{eklenen} ek eklendi")
 
     def gonder(self):
         kime = self.kime_var.get().strip()

@@ -7,6 +7,10 @@ Kullanim:  xvfb-run -a .venv/bin/python tests/ui_smoke.py
 import os
 import sys
 import time
+
+# Canlı testte dosya seçici penceresi açılmasın; tkinter yedeği kullanılsın
+os.environ.setdefault("POSTACIM_DOSYA_SECICI", "tk")
+
 import tkinter.messagebox as messagebox
 from tkinter import filedialog, ttk
 
