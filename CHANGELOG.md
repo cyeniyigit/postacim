@@ -15,6 +15,9 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   arşiv ve e-posta süzgeçleri eklendi. Açılamayan dosya için hata gösterilir.
 - Son kullanılan dizin hatırlanır (ilk açılışta İndirilenler). Ek kaydetme ve
   "Mesajı farklı kaydet" aynı dizinle açılır; eksik uzantı (.eml/.bin) eklenir.
+- **Depo güvenliği:** `hesap.json` ve `kisiler.json` `.gitignore`a eklendi;
+  testteki kişisel ad yer tutucuyla değiştirildi; güncelleme sırasında kişisel
+  posta bilgilerinin ayıklanması kuralı `DEVAM.md`ye işlendi.
 
 ### Eklenen
 - `tests/dosya_secici_test.py` — süzgeç çevirisi, seçici zorlama,

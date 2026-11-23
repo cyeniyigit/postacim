@@ -132,7 +132,7 @@ def main() -> int:
             "Body": {"ContentType": "Text", "Content": "Bu bir test ilidir."},
             "ToRecipients": [
                 {"EmailAddress": {"Address": "kullanici@ornek.gov.tr",
-                                  "Name": "Caglar Yeniyigit"}}
+                                  "Name": "Ornek Kullanici"}}
             ],
         },
         "SaveToSentItems": "true",

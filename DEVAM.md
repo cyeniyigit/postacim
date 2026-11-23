@@ -3,6 +3,31 @@
 > Bu dosya projenin geliştirme sürecini anlatır: hangi sorun çözüldü, hangi
 > sunucu tarafı kısıtıyla karşılaşıldı, hangi kararlar alındı.
 
+## Güncelleme kuralı (zorunlu)
+
+Her güncellemede bu sıra izlenir; hiçbir adım atlanmaz:
+
+1. **Kişisel posta bilgilerini ayıkla.** Commit öncesi gerçek e-posta
+   adresleri, kullanıcı adları, parolalar, gerçek sunucu adları/IP'leri ve
+   kişi listeleri koddan/dokümandan çıkarılır; yerine yer tutucu yazılır
+   (`ornek@ornek.com`, `mail.kurum.gov.tr`, `KURUM\kullanici`).
+   `hesap.json` / `kisiler.json` hiçbir zaman depoya eklenmez.
+2. **Sızıntı denetimi yap.** `git status` incelenir ve izlenen dosyalarda
+   şu aramalar temiz çıkmalıdır (yer tutucular hariç):
+   ```bash
+   git grep -n -I -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+   git grep -n -i -I -E 'parola|şifre|password'
+   ```
+3. **Testleri çalıştır.** `./tests/run_all.sh` geçmeden commit edilmez.
+4. **GitHub'ı güncelle.** Değişiklikler commit'lenip `origin/main`e gönderilir:
+   `git push origin main`.
+5. **Yerel kurulu kopyayı güncelle.** Menüdeki Postacım yeni sürümü
+   çalıştırmalıdır:
+   ```bash
+   ~/.local/share/postacim/venv/bin/python -m pip install .
+   # ya da: ./kur.sh
+   ```
+
 Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
 Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
 
