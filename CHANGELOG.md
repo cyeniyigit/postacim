@@ -3,6 +3,38 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.5] — 2026-11-23
+
+### Düzeltilen
+- **Uygulama menüde kurulu görünüyor ama hiç açılmıyordu (GNOME)**: Masaüstü
+  girdisinden başlatılan uygulamanın hata çıktısı ekrana basılmaz; hata yalnızca
+  oturum günlüğüne düşer. Kullanıcı "hiçbir şey olmuyor" görüyordu. Üç neden
+  giderildi:
+  - Kurulum **editable** yapılıyordu (`pip install -e`); Postacım klasörü
+    taşındığında/silindiğinde uygulama `No module named postacim` ile ölüyordu.
+    Artık normal kurulumda paket sanal ortama **kopyalanır**; kaynak klasör
+    taşınsa bile uygulama çalışır. (Editable kurulum yalnızca `--gelistirici`
+    seçeneğinde kullanılır.)
+  - **Tk (tkinter) eksikse** kurulum "başarılı" görünüyor, uygulama ise hiç
+    açılmıyordu. Artık `kur.sh` kurulumdan önce `tkinter` varlığını kontrol
+    eder ve eksikse `python3-tk` yolunu gösterir.
+  - Kurulum sonrası **doğrulama** yapılır (`import tkinter, postacim`); bozuk
+    kurulum "başarılı" diye bildirilmez.
+- `kur.sh` artık **root (sudo) ile çalıştırılmayı reddeder**: kullanıcı
+  dizinine kurulan dosyaların sahibi root olur ve uygulama sessizce açılmaz.
+
+### Eklenen
+- `tools/baslatici.sh` — hata yutmayan başlatıcı: başlatma hatası
+  `~/.local/state/postacim/hata.log` dosyasına yazılır ve (varsa `zenity`,
+  `kdialog` ya da `xmessage` ile) kullanıcıya **iletişim kutusunda** gösterilir.
+  Hata türüne göre çözüm önerilir (eksik `tkinter`, bozuk sanal ortam,
+  kaynak klasörün taşınmış olması).
+- `postacim/__main__.py` — arayüz içe aktarılamadığında (eksik `tkinter`,
+  bozuk kurulum) anlaşılır hata mesajı basar; iz (traceback) yerine
+  "yeniden kurun" yönergesi verir.
+- README'ye "kurulu görünüyor ama açılmıyor" senaryosu için sorun giderme
+  satırları ve `python3-tk` gereksinimi.
+
 ## [0.1.4] — 2026-11-22
 
 ### Düzeltilen

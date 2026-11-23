@@ -18,6 +18,7 @@ MASAUSTU="$HOME/.local/share/applications"
 DESKTOP="$MASAUSTU/$AD.desktop"
 BASLATICI="$BINDIR/$AD"
 KALDIRICI="$BINDIR/$AD-kaldir"
+BASLATICI_KAYNAK="$DIZIN/tools/baslatici.sh"
 
 yesno=1
 gelistirici=0
@@ -51,6 +52,13 @@ if [ "$kaldir" -eq 1 ]; then
 fi
 
 # ------------------------------------------------------------------ python
+if [ "$(id -u)" -eq 0 ]; then
+    echo "!! Kurulumu root (sudo) olarak yapmayın." >&2
+    echo "   Postacım kullanıcı dizinine (~/.local) kurulur. sudo ile kurulursa" >&2
+    echo "   dosyaların sahibi root olur ve uygulama sessizce açılmaz." >&2
+    exit 1
+fi
+
 PY3="$(command -v python3 || true)"
 if [ -z "$PY3" ]; then
     echo "!! Python 3 bulunamadı. Python 3.10+ kurun (Pardus: 'sudo apt install python3')." >&2
@@ -71,16 +79,34 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 VPY="$VENV/bin/python"
 
+# Tk (tkinter) yoksa arayüz hiç açılmaz. Kurulum "başarılı" görünüp
+# uygulama sonra sessizce öldüğü için burada erken uyarılır.
+if ! "$VPY" -c "import tkinter" >/dev/null 2>&1; then
+    echo "!! Tkinter (Tk) bulunamadı — Postacımın arayüzü için gerekli." >&2
+    echo "   Pardus/Ubuntu/Debian:  sudo apt install python3-tk" >&2
+    echo "   Fedora:                sudo dnf install python3-tkinter" >&2
+    echo "   Arch:                 sudo pacman -S tk" >&2
+    exit 1
+fi
+
 echo "→ Bağımlılıklar kuruluyor…"
 "$VPY" -m pip install --quiet --upgrade pip
 "$VPY" -m pip install --quiet -r "$DIZIN/requirements.txt"
 
 # --------------------------------------------------------------- uygulama
 echo "→ Postacım paketi kuruluyor…"
-if ! "$VPY" -m pip install --quiet -e "$DIZIN" 2>/dev/null; then
-    # Salt-okunur klasörde geliştirilebilir kurulum (kod güncellemeleri
-    # otomatik yansımaz, yeniden kurulum gerekir)
-    "$VPY" -m pip install --quiet "$DIZIN"
+if [ "$gelistirici" -eq 1 ]; then
+    # Geliştirici kurulumu: kaynak koda bağlı (kod değişiklikleri anında yansır).
+    if ! "$VPY" -m pip install --quiet -e "$DIZIN" 2>/dev/null; then
+        "$VPY" -m pip install --quiet --no-build-isolation -e "$DIZIN"
+    fi
+else
+    # Normal kurulum: paket sanal ortama kopyalanır. Böylece uygulama kaynak
+    # klasörden bağımsız çalışır; Postacım klasörü taşınsa/silinse bile menüdeki
+    # girdi çalışmaya devam eder (editable kurulumda sessizce bozulurdu).
+    if ! "$VPY" -m pip install --quiet "$DIZIN" 2>/dev/null; then
+        "$VPY" -m pip install --quiet --no-build-isolation "$DIZIN"
+    fi
 fi
 
 if [ "$gelistirici" -eq 1 ]; then
@@ -89,13 +115,27 @@ if [ "$gelistirici" -eq 1 ]; then
     exit 0
 fi
 
+# --------------------------------------------------------------- doğrulama
+if ! "$VPY" -c "import tkinter, postacim" >/dev/null 2>&1; then
+    echo "!! Kurulum doğrulanamadı: arayüz içe aktarılamadı." >&2
+    echo "   Ayrıntı için:  $VPY -c 'import postacim.ui'" >&2
+    exit 1
+fi
+
 # --------------------------------------------------------------- başlatıcı
 mkdir -p "$BINDIR" "$MASAUSTU"
-cat > "$BASLATICI" <<EOF
+if [ -f "$BASLATICI_KAYNAK" ]; then
+    # Hata yutmayan başlatıcı: hata günlüğe yazılır ve kullanıcıya iletişim
+    # kutusuyla gösterilir (GNOME'da masaüstü girdisinden açılan uygulamanın
+    # hata çıktısı ekrana basılmaz).
+    sed "s|__VPY__|$VPY|g" "$BASLATICI_KAYNAK" > "$BASLATICI"
+else
+    cat > "$BASLATICI" <<EOF
 #!/usr/bin/env bash
 # Postacım başlatıcı (kur.sh ile oluşturuldu)
 exec "$VPY" -m $AD "\$@"
 EOF
+fi
 chmod +x "$BASLATICI"
 
 # --------------------------------------------------------------- simge

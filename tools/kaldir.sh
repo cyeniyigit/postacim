@@ -21,6 +21,7 @@ MASAUSTU="$HOME/.local/share/applications"
 IKONLAR="$HOME/.local/share/icons/hicolor"
 KURUM="$HOME/.local/share/$AD"
 AYARLAR="$HOME/.config/$AD"
+DURUM="${XDG_STATE_HOME:-$HOME/.local/state}/$AD"
 
 mod=uygulama
 for arg in "$@"; do
@@ -68,6 +69,11 @@ fi
 # Sanal ortam + uygulama dosyaları
 if [ -d "$KURUM" ]; then
     rm -rf "$KURUM" && sil_sayac=$((sil_sayac + 1))
+fi
+
+# Hata günlüğü (başlatma sorunlarının kaydı)
+if [ -d "$DURUM" ]; then
+    rm -rf "$DURUM" && sil_sayac=$((sil_sayac + 1))
 fi
 
 echo "✓ Uygulama kaldırıldı ($sil_sayac öğe silindi)."

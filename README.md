@@ -59,13 +59,18 @@ cd postacim
 `kur.sh` geri kalan her şeyi yapar:
 
 - Python 3.10+ kontrolü (yoksa uyarı verir)
+- **Tk (tkinter)** kontrolü — eksikse kurulumu durdurup `python3-tk` yolunu gösterir
 - **Sanal ortamı** `~/.local/share/postacim/venv` altında oluşturur
 - Bağımlılıkları kurar (`requests`, `requests-ntlm`, `sv-ttk`, `Pillow`,
   `tkinterweb`)
 - Uygulamayı kurar ve `~/.local/bin/postacim` başlatıcısını oluşturur
 - Uygulama menüsüne "Postacım" girdisi ekler (`.desktop` dosyası)
+- Kurulumu doğrular (arayüz gerçekten içe aktarılabiliyor mu)
 
 Sonra terminalden `postacim` yazıp çalıştırabilir ya da menüden açabilirsiniz.
+
+> **Kurulumdan sonra Postacım klasörünü silebilirsiniz.** Kurulum, uygulamayı
+> sanal ortama kopyalar; menüdeki girdi kaynak klasöre bağlı değildir.
 
 > **Sanal ortam (venv) depoya dâhil edilmez** — projeye gömülmez, çünkü
 > her makinede farklı Python/derleyici vardır. `kur.sh` onu sizin için
@@ -125,7 +130,10 @@ kurulur ve `~/.config/postacim/` altında ayar tutar.
 Gereken paketler: `requests`, `requests-ntlm`, `sv-ttk` (modern tema),
 `Pillow` (JPEG vb. gövde resimleri; yoksa PNG/GIF yine çalışır),
 `tkinterweb` (HTML gövde gösterimi; yoksa düz metin okuyucuya düşer).
-Arayüz için ek bir şey gerekmez (Tkinter Python ile gelir).
+Arayüz için **Tk (tkinter)** gerekir: Pardus/Ubuntu/Debian'da `python3-tk`
+paketiyle gelir (bazı minimal kurulumlarda ayrıca kurulması gerekir),
+Fedora'da `python3-tkinter`, Arch'ta `tk`. `kur.sh` bu bileşeni kurulum
+öncesinde kontrol eder.
 
 ## Çalıştırma
 
@@ -371,6 +379,9 @@ MIME içeriğinden ayrılır).
 
 | Belirti | Sebep / çözüm |
 |---|---|
+| Menüde "Postacım" var ama tıklayınca hiçbir şey olmuyor | Masaüstü girdisinden açılan uygulamanın hata çıktısı ekrana basılmaz. Hata günlüğü: `~/.local/state/postacim/hata.log`. Sık nedenler: `python3-tk` eksik (`sudo apt install python3-tk`), sanal ortam bozulmuş (Python sürümü değişmiş olabilir). Çözüm: Postacım klasöründe `./kur.sh` ile yeniden kurun. |
+| Terminalden `postacim` çalıştırınca "No module named postacim" | Kurulum kaynak klasörüne bağlı kalmış. `./kur.sh` ile yeniden kurun (artık klasörü silebilirsiniz). |
+| "Arayüz açılamadı" / `ImportError: No module named 'tkinter'` | Tk bileşeni eksik: `sudo apt install python3-tk` (Fedora: `python3-tkinter`, Arch: `tk`). |
 | `401 Kimlik doğrulama başarısız` | Kullanıcı adı sunucunun beklediği biçimde olmalı (örn. `KURUM\kullanici`); parola büyük/küçük harf duyarlı. |
 | Gmail'de "uygulama parolası" hatası | Normal parola çalışmaz; Google Hesabı → Güvenlik → 2 Adımlı Doğrulama açıkken uygulama parolası üretin. Ayrıca Gmail'de IMAP etkin olmalı. |
 | Gmail klasörleri görünmüyor | IMAP kapalıysa hesap eklenemez; Gmail ayarlarından IMAP'i etkinleştirin. |
