@@ -35,6 +35,7 @@ from . import dosya_secici
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
+    KLASORLER,
     RESIM_SEMASI,
     EwsHata,
     EwsIstemci,
@@ -3826,6 +3827,8 @@ class Postacim(tk.Tk):
 
         **"Yeni Klasör…"** yalnız **aktif hesapta** görünür (IMAP ve EWS);
         kökte (hesap düğümünde) ya da herhangi bir klasörde açılabilir.
+        **"Yeniden Adlandır…"** aktif hesapta, özel olmayan klasörlerde
+        (IMAP etiketleri ve EWS kullanıcı klasörleri) görünür.
         "Klasörü Sil…" ise yalnız aktif IMAP hesabında ve özel olmayan
         klasörlerde görünür (Exchange hesaplarında klasör silme yok).
         Menüde öğe yoksa None döner.
@@ -3845,16 +3848,23 @@ class Postacim(tk.Tk):
                 label="Yeni Klasör…", image=self.ikon.get("klasor_ekle"),
                 compound="left", command=self.klasor_olustur,
             )
-            if kimlik and hesap.get("tur") == "imap" and kimlik not in SIRA:
+            if kimlik and kimlik not in SIRA and kimlik not in KLASORLER:
                 menu.add_separator()
                 ad = next(
                     (k.ad for k in self.klasor_liste if k.kimlik == kimlik),
                     kimlik,
                 )
                 menu.add_command(
-                    label="Klasörü Sil…", image=self.ikon["sil"],
-                    compound="left", command=lambda: self.klasor_sil(kimlik, ad),
+                    label="Yeniden Adlandır…", image=self.ikon["hesap_duzenle"],
+                    compound="left",
+                    command=lambda: self.klasor_yeniden_adlandir(kimlik, ad),
                 )
+                if hesap.get("tur") == "imap":
+                    menu.add_command(
+                        label="Klasörü Sil…", image=self.ikon["sil"],
+                        compound="left",
+                        command=lambda: self.klasor_sil(kimlik, ad),
+                    )
         # Boş menüde `index("end)"` sürüme göre None ya da TclError verir;
         # her iki durumda da "öğe yok" demektir.
         try:
@@ -3910,17 +3920,57 @@ class Postacim(tk.Tk):
         # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
         return ("yenile", f"Klasör oluşturuldu: {ad}")
 
-    def _klasor_adi_penceresi(self) -> str | None:
-        """Klasör adı soran küçük pencere; İptal/boşsa None döner."""
+    def klasor_yeniden_adlandir(self, kimlik: str, ad: str, yeni: str | None = None):
+        """Klasörü yeniden adlandırmak için ad penceresi açar (sağ tuş).
+
+        `yeni` verilirse pencere açılmaz (testler için). IMAP'te klasör
+        kimliği adla birlikte değişir; EWS'te kimlik aynı kalır.
+        """
+        if self.istemci is None:
+            return
+        if yeni is None:
+            yeni = self._klasor_adi_penceresi(
+                ilk=ad, baslik="Klasörü Yeniden Adlandır"
+            )
+            if not yeni:
+                return
+        yeni = yeni.strip()
+        if not yeni:
+            messagebox.showwarning(
+                "Yeniden Adlandır", "Klasör adı boş olamaz."
+            )
+            return
+        if yeni == ad:
+            return  # değişiklik yok
+        self.durum.set(f"Klasör adı değiştiriliyor: {ad} → {yeni}…")
+        threading.Thread(
+            target=self._arka_plan,
+            args=(self._klasor_yeniden_adlandir_cek, kimlik, yeni),
+            daemon=True,
+        ).start()
+
+    def _klasor_yeniden_adlandir_cek(self, kimlik: str, yeni: str):
+        self.istemci.klasor_yeniden_adlandir(kimlik, yeni)
+        # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
+        return ("yenile", f"Klasör adı değişti: {yeni}")
+
+    def _klasor_adi_penceresi(
+        self, ilk: str | None = None, baslik: str = "Yeni Klasör",
+    ) -> str | None:
+        """Klasör adı soran küçük pencere; İptal/boşsa None döner.
+
+        `ilk` verilirse ad alanı öndoldurulur ve tamamı seçilidir
+        (yeniden adlandırmada mevcut ad üzerine yazmak tek hareket).
+        """
         pencere = tk.Toplevel(self)
-        pencere.title("Yeni Klasör")
+        pencere.title(baslik)
         pencere.transient(self)
         self._pencere_simgesi(pencere)
         pencere.resizable(False, False)
         ttk.Label(
             pencere, text="Klasör adı:",
         ).grid(row=0, column=0, columnspan=2, padx=14, pady=(12, 4), sticky="w")
-        ad_degisken = tk.StringVar()
+        ad_degisken = tk.StringVar(value=ilk or "")
         giris = ttk.Entry(pencere, textvariable=ad_degisken, width=34)
         giris.grid(row=1, column=0, columnspan=2, padx=14, pady=4)
 
@@ -3930,13 +3980,16 @@ class Postacim(tk.Tk):
             sonuc["ad"] = ad_degisken.get().strip() if tamam else None
             pencere.destroy()
 
-        ttk.Button(pencere, text="Oluştur", command=lambda: kapat(True)).grid(
+        dugme_metni = "Değiştir" if ilk else "Oluştur"
+        ttk.Button(pencere, text=dugme_metni, command=lambda: kapat(True)).grid(
             row=2, column=0, padx=14, pady=10, sticky="e"
         )
         ttk.Button(pencere, text="İptal", command=lambda: kapat(False)).grid(
             row=2, column=1, padx=8, pady=10, sticky="w"
         )
         giris.focus_set()
+        if ilk:
+            giris.selection_range(0, "end")
         giris.bind("<Return>", lambda olay: kapat(True))
         giris.bind("<Escape>", lambda olay: kapat(False))
         pencere.grab_set()

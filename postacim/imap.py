@@ -804,6 +804,41 @@ class ImapIstemci:
         return kod
 
     @_kilitli
+    def klasor_yeniden_adlandir(self, kimlik: str, yeni_ad: str) -> str:
+        """Klasörü yeniden adlandırır: `RENAME <eski> <yeni>`.
+
+        IMAP'te klasör adı aynı zamanda kimliğidir; başarılı olunca yeni
+        **kimlik** döner ve eski adla kurulan önbellek/harita kayıtları
+        taşınır. Özel klasörler (gelen kutusu, gönderilmiş, …) reddedilir.
+        """
+        if kimlik in SIRA:
+            raise EwsHata(
+                "Özel klasör yeniden adlandırılamaz (gelen kutusu, "
+                "gönderilmiş, taslak, çöp, spam, arşiv, giden kutusu)."
+            )
+        yeni_ad = (yeni_ad or "").strip()
+        if not yeni_ad:
+            raise EwsHata("Klasör adı boş olamaz.")
+        if any(ord(ch) < 0x20 for ch in yeni_ad):
+            raise EwsHata("Klasör adı kontrol karakterleri içeremez.")
+        eski_ad = self._klasor_adi(kimlik)
+        yeni_kod = _utf7_kodla(yeni_ad)
+        if yeni_kod == eski_ad:
+            return kimlik  # ad değişmedi — sunucuya gitmeye gerek yok
+        tip, _ = self._komut("rename", _tirnakla(eski_ad), _tirnakla(yeni_kod))
+        if tip != "OK":
+            raise EwsHata(
+                f"Klasör yeniden adlandırılamadı: {kimlik} → {yeni_ad} "
+                "— sunucu reddetti."
+            )
+        # Kimlik değişti: haritayı taşı, eski önbelleği bırak (yeni klasör
+        # ilk açılışta baştan çekilir)
+        self._klasor_adlari.pop(kimlik, None)
+        self._klasor_adlari[yeni_kod] = yeni_kod
+        self._onbellek.pop(kimlik, None)
+        return yeni_kod
+
+    @_kilitli
     def klasor_sil(self, kimlik: str) -> None:
         """Klasörü (IMAP etiketini) siler: `DELETE <klasör>`.
 

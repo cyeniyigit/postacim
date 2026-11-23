@@ -120,6 +120,8 @@ class MiniImapSunucu:
             return etiket.encode() + b" OK Silindi\r\n"
         if komut == "CREATE":
             return etiket.encode() + b" OK Olusturuldu\r\n"
+        if komut == "RENAME":
+            return etiket.encode() + b" OK Adlandirildi\r\n"
         if komut == "LOGOUT":
             conn_yok = b"* BYE\r\n" + etiket.encode() + b" OK Devam\r\n"
             return conn_yok
@@ -167,6 +169,8 @@ def main() -> int:
             istemci.klasor_sil("Proje X")
             # Klasör oluşturma: CREATE "Yeni Klasör"
             istemci.klasor_olustur("Yeni Klasör")
+            # Yeniden adlandırma: RENAME "Proje X" "Proje 2"
+            istemci.klasor_yeniden_adlandir("Proje X", "Proje 2")
         finally:
             try:
                 istemci.imap.shutdown()
@@ -183,6 +187,9 @@ def main() -> int:
     kontrol(any(f'CREATE "{imap_mod._utf7_kodla("Yeni Klasör")}"' in k
                 for k in komutlar),
             'ham CREATE komutu: CREATE "Yeni Klas&APY-r" (utf-7)')
+
+    kontrol(any('RENAME "Proje X" "Proje 2"' in k for k in komutlar),
+            'ham RENAME komutu: RENAME "Proje X" "Proje 2"')
 
     kontrol(any(k.endswith('LIST "" *') for k in komutlar),
             'ham LIST komutu `LIST "" *` (tırnaklı boş dizin)')

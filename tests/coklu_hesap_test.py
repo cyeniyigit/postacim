@@ -235,6 +235,12 @@ class SahteImap:
             return ("NO", [b"Mailbox name not permitted"])
         return ("OK", [b"Created"])
 
+    def rename(self, eski, yeni):
+        self.komutlar.append(("rename", (eski, yeni)))
+        if "Korumali" in yeni:
+            return ("NO", [b"Mailbox name not permitted"])
+        return ("OK", [b"Renamed"])
+
 
 def _zarf(ad, adres, konu, tarih, bayrak=""):
     """RFC822.HEADER baytları üretir."""
@@ -435,6 +441,49 @@ def imap_test():
             kontrol(False, "boş klasör adı hata fırlatmalı")
         except EwsHata as exc:
             kontrol("boş" in str(exc), f"boş ad reddedildi ({exc})")
+
+        # Klasör yeniden adlandırma (IMAP RENAME)
+        istemci.klasor_yeniden_adlandir("Proje X", "Proje 2")
+        kontrol(
+            ("rename", ('"Proje X"', '"Proje 2"')) in istemci.imap.komutlar,
+            'RENAME komutu gönderildi: RENAME "Proje X" "Proje 2"',
+        )
+        kontrol("Proje X" not in istemci._klasor_adlari
+                and istemci._klasor_adlari.get("Proje 2") == "Proje 2",
+                "haritada eski ad düştü, yeni ad eklendi")
+        kontrol("Proje X" not in istemci._onbellek,
+                "eski klasörün önbelleği bırakıldı")
+        # Türkçe ad: telde utf-7 (ascii) gitmeli — kimlik, listelemede
+        # dönen kodlanmış sunucu adıdır (arayüz de bunu geçirir)
+        eski_kod = imap_mod._utf7_kodla("Özel Notlar")
+        yeni_kod = imap_mod._utf7_kodla("Yeni Notlar")
+        istemci.klasor_yeniden_adlandir(eski_kod, "Yeni Notlar")
+        kontrol(
+            ("rename", (f'"{eski_kod}"', f'"{yeni_kod}"'))
+            in istemci.imap.komutlar,
+            "RENAME utf-7 adlarla gönderildi",
+        )
+        kontrol(istemci._klasor_adlari.get(yeni_kod) == yeni_kod,
+                "yeni kimlik haritada")
+        try:
+            istemci.klasor_yeniden_adlandir("inbox", "Gelen 2")
+            kontrol(False, "özel klasör (inbox) adlandırılmamalı")
+        except EwsHata as exc:
+            kontrol("adlandırılamaz" in str(exc),
+                    f"özel klasör koruması ({exc})")
+        try:
+            istemci.klasor_yeniden_adlandir("Proje 2", "Korumali Ad")
+            kontrol(False, "sunucunun reddettiği ad hata fırlatmalı")
+        except EwsHata as exc:
+            kontrol("reddetti" in str(exc) or "reddedildi" in str(exc),
+                    f"RENAME reddi → okunur hata ({exc})")
+        try:
+            istemci.klasor_yeniden_adlandir("Proje 2", "   ")
+            kontrol(False, "boş yeni ad hata fırlatmalı")
+        except EwsHata as exc:
+            kontrol("boş" in str(exc), f"boş yeni ad reddedildi ({exc})")
+        ayni = istemci.klasor_yeniden_adlandir("Proje 2", "Proje 2")
+        kontrol(ayni == "Proje 2", "aynı ad no-op, sunucuya gitmedi")
 
 
 def smtp_test():

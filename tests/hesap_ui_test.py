@@ -42,6 +42,7 @@ class SahteIstemci:
         self.hesap = hesap
         self.silinenler: list = []  # klasor_sil çağrıları
         self.olusturulanlar: list = []  # klasor_olustur çağrıları
+        self.adlandirilanlar: list = []  # klasor_yeniden_adlandir çağrıları
 
     def klasor_listesi(self):
         return [
@@ -91,6 +92,10 @@ class SahteIstemci:
     def klasor_olustur(self, ad):
         self.olusturulanlar.append(ad)
         return ad
+
+    def klasor_yeniden_adlandir(self, kimlik, yeni_ad):
+        self.adlandirilanlar.append((kimlik, yeni_ad))
+        return kimlik
 
     def kalici_sil(self, mesaj):
         pass
@@ -234,11 +239,15 @@ def main() -> int:
                 f"IMAP inbox'ta yeni klasör öğesi var ({ogeler})")
         kontrol("Klasörü Sil…" not in ogeler,
                 f"özel klasörde (inbox) silme öğesi yok ({ogeler})")
+        kontrol("Yeniden Adlandır…" not in ogeler,
+                f"özel klasörde (inbox) adlandırma öğesi yok ({ogeler})")
         ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"{gmail_id}|Proje X"))
         kontrol("Klasörü Sil…" in ogeler,
                 f"özel olmayan klasörde silme öğesi var ({ogeler})")
         kontrol("Yeni Klasör…" in ogeler,
                 f"özel olmayan klasörde yeni klasör öğesi de var ({ogeler})")
+        kontrol("Yeniden Adlandır…" in ogeler,
+                f"özel olmayan klasörde adlandırma öğesi var ({ogeler})")
         ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"hesap:{gmail_id}"))
         kontrol("Yeni Klasör…" in ogeler,
                 f"hesap düğümünde yeni klasör öğesi var ({ogeler})")
@@ -262,6 +271,23 @@ def main() -> int:
                 and gmail_istemci.olusturulanlar == ["Proje Y"],
                 f"boş klasör adı uyarı verir, oluşturmaz ({uyari_kutular})")
 
+        # Yeniden adlandırma akışı: yeni verilmiş → pencere açılmaz
+        uygulama.klasor_yeniden_adlandir("Proje X", "Proje X", yeni="Proje Y")
+        bekle(uygulama, 2)
+        kontrol(gmail_istemci.adlandirilanlar == [("Proje X", "Proje Y")],
+                f"adlandırma istemciye ulaştı ({gmail_istemci.adlandirilanlar})")
+        # Aynı ad → istemciye gitmez
+        uygulama.klasor_yeniden_adlandir("Proje Y", "Proje Y", yeni="Proje Y")
+        bekle(uygulama, 1)
+        kontrol(len(gmail_istemci.adlandirilanlar) == 1,
+                "aynı ad yeniden adlandırma tetiklemez")
+        # Boş yeni ad → uyarı, istemciye gitmez
+        uygulama.klasor_yeniden_adlandir("Proje Y", "Proje Y", yeni="   ")
+        bekle(uygulama, 1)
+        kontrol(len(uyari_kutular) == 2
+                and len(gmail_istemci.adlandirilanlar) == 1,
+                f"boş yeni ad uyarı verir, adlandırmaz ({uyari_kutular})")
+
         # Geri dönüş
         uygulama.klasor_listesi.selection_set(f"{kurum_id}|sentitems")
         uygulama.klasor_listesi.event_generate("<<TreeviewSelect>>")
@@ -274,13 +300,28 @@ def main() -> int:
                 f"aktif EWS hesapta yeni klasör öğesi var ({ogeler})")
         kontrol("Klasörü Sil…" not in ogeler,
                 f"EWS (kurum) hesapta klasör silme öğesi yok ({ogeler})")
-        # EWS hesapta da oluşturma çalışır
+        kontrol("Yeniden Adlandır…" not in ogeler,
+                f"EWS varsayılan klasöründe adlandırma öğesi yok ({ogeler})")
+        # EWS hesapta da oluşturma + kullanıcı klasöründe adlandırma çalışır
         kurum_istemci = uygulama.istemci
         uygulama.klasor_olustur("Kurum Klasörü")
         bekle(uygulama, 2)
         kontrol(kurum_istemci.olusturulanlar == ["Kurum Klasörü"],
                 f"EWS hesapta oluşturma istemciye ulaştı "
                 f"({kurum_istemci.olusturulanlar})")
+        ogeler = menu_komutlari(
+            uygulama._klasor_menu_olustur(f"{kurum_id}|Proje X")
+        )
+        kontrol("Yeniden Adlandır…" in ogeler,
+                f"EWS kullanıcı klasöründe adlandırma öğesi var ({ogeler})")
+        kontrol("Klasörü Sil…" not in ogeler,
+                f"EWS'te silme öğesi yok ({ogeler})")
+        uygulama.klasor_yeniden_adlandir("Proje X", "Proje X",
+                                         yeni="Kurum Klasörü")
+        bekle(uygulama, 2)
+        kontrol(kurum_istemci.adlandirilanlar == [("Proje X", "Kurum Klasörü")],
+                f"EWS hesapta adlandırma istemciye ulaştı "
+                f"({kurum_istemci.adlandirilanlar})")
 
         # --- Hesaplar menüsü ---
         ogeler = []

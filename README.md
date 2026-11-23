@@ -304,6 +304,11 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   verir. Oluşturma arka planda yapılır; bitince klasör listesi ve sayaçlar
   otomatik yenilenir. Exchange'te yeni klasör kök altında açılır ve kullanıcı
   klasörleri klasör listesinde görünür.
+- **Klasör yeniden adlandırma (sağ tuş):** kullanıcı klasörüne sağ tıklayın →
+  **"Yeniden Adlandır…"** (yalnız aktif hesapta). Ad penceresi mevcut adla
+  açılır (Enter = Değiştir, Esc = İptal); aynı ad girilirse işlem yapılmaz.
+  IMAP'te klasör kimliği değişir, EWS'te değişmez; varsayılan/özel klasörler
+  adlandırılamaz.
 - **Klasör silme (sağ tuş):** klasör ağacında bir klasöre sağ tıklayın →
   **"Klasörü Sil…"** (yalnız aktif Gmail/IMAP hesabında). Gmail'de etiket
   **tüm mesajlardan kaldırılır; mesajlar silinmez** (Tüm Postalar'da durur).

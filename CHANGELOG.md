@@ -3,6 +3,36 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.10] — 2026-11-23
+
+### Eklenen
+- **Klasör yeniden adlandırma (sağ tuş):** klasör ağacında özel/kullanıcı
+  klasörüne sağ tıklayın → **"Yeniden Adlandır…"** (yalnız aktif hesapta;
+  IMAP ve EWS). Ad penceresi mevcut adla öndoldurulur, tamamı seçilidir
+  (üzerine yazmak tek hareket; Enter = Değiştir, Esc = İptal). Aynı ad
+  girilirse işlem yapılmaz; boş ad uyarı verir. İşlem arka planda yapılır,
+  bitince klasör listesi ve sayaçlar yenilenir.
+  - **IMAP/Gmail:** `RENAME <eski> <yeni>`; adlar değiştirilmiş UTF-7 ile.
+    Etiketin kimliği değiştiği için eski adın önbelleği bırakılır ve harita
+    güncellenir. Özel klasörler (gelen kutusu, gönderilmiş, …) reddedilir.
+  - **Exchange (EWS):** `UpdateFolder` ile `folder:DisplayName` güncellenir;
+    klasör kimliği değişmez. Exchange güncel ChangeKey istediği için önce
+    tek `GetFolder` ile tazelenir, sonra yazılır (tekrar edilmez).
+    Varsayılan 7 klasör reddedilir.
+
+### Testler
+- `tests/ews_klasor_test.py` — UpdateFolder gövdesi (ChangeKey tazeleme,
+  alan URI), kimlik değişmez, önbellek düşürme, varsayılan klasör/boş ad
+  reddi.
+- `tests/coklu_hesap_test.py` — IMAP `RENAME` (ascii ve utf-7 adlar),
+  harita/önbellek güncellemesi, özel klasör koruması, sunucu reddi, boş ad
+  ve aynı-ad no-op.
+- `tests/imap_yerel_sunucu_test.py` — tel denetimi: ham
+  `RENAME "Proje X" "Proje 2"` komutu.
+- `tests/hesap_ui_test.py` — menüde "Yeniden Adlandır…" (IMAP özel klasör +
+  EWS kullanıcı klasörü; inbox'ta yok), adlandırma akışı istemciye ulaşır
+  (IMAP ve EWS), aynı ad/boş ad davranışları.
+
 ## [0.1.9] — 2026-11-23
 
 ### Eklenen

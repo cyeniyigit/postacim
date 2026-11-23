@@ -1464,13 +1464,64 @@ class EwsIstemci:
             "</m:Folders>"
             "</m:CreateFolder>"
         )
-        kok = self.istek(govde, tekrar=1)
+        kok =         self.istek(govde, tekrar=1)
         el = kok.find(".//m:Folders/t:Folder/t:FolderId", NS)
         if el is None or not el.get("Id"):
             raise EwsHata("Klasör oluşturuldu ancak kimliği alınamadı.")
         # Yeni klasör listede hemen görünsün: FindFolder önbelleği düşer
         self._ozel_klasor_onbellek = None
         return el.get("Id")
+
+    def klasor_yeniden_adlandir(self, kimlik: str, yeni_ad: str) -> str:
+        """Klasörü yeniden adlandırır (UpdateFolder); kimlik değişmez.
+
+        Exchange, yazma işleminde güncel ChangeKey ister; o yüzden önce
+        tek GetFolder ile kimlik + ChangeKey tazelenir, sonra DisplayName
+        alanı güncellenir. Varsayılan 7 klasör reddedilir. Tekrar edilmez
+        (tekrar=1): geçici hatada iki kez yazılmasın.
+        """
+        yeni_ad = (yeni_ad or "").strip()
+        if not yeni_ad:
+            raise EwsHata("Klasör adı boş olamaz.")
+        if kimlik in KLASORLER:
+            raise EwsHata(
+                "Varsayılan klasör (gelen kutusu, gönderilmiş, taslak, "
+                "silinmiş, önemsiz, arşiv, giden kutusu) yeniden "
+                "adlandırılamaz."
+            )
+        govde = (
+            "<m:GetFolder>"
+            '<m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape>'
+            f"<m:FolderIds>{_klasor_id_xml(kimlik)}</m:FolderIds>"
+            "</m:GetFolder>"
+        )
+        kok = self.istek(govde, tekrar=1)
+        el = kok.find(".//m:Folders/t:Folder/t:FolderId", NS)
+        if el is None or not el.get("Id"):
+            raise EwsHata("Klasörün güncel kimliği alınamadı.")
+        degis_anahtari = el.get("ChangeKey", "")
+        govde = (
+            "<m:UpdateFolder>"
+            "<m:FolderChanges>"
+            "<t:FolderChange>"
+            f'<t:FolderId Id="{_kacis(el.get("Id"))}"'
+            f' ChangeKey="{_kacis(degis_anahtari)}"/>'
+            "<m:Updates>"
+            "<t:SetItemField>"
+            '<t:FieldURI FieldURI="folder:DisplayName"/>'
+            "<t:Folder>"
+            f"<t:DisplayName>{_kacis(yeni_ad)}</t:DisplayName>"
+            "</t:Folder>"
+            "</t:SetItemField>"
+            "</m:Updates>"
+            "</t:FolderChange>"
+            "</m:FolderChanges>"
+            "</m:UpdateFolder>"
+        )
+        self.istek(govde, tekrar=1)
+        # Ağaçta yeni ad hemen görünsün: FindFolder önbelleği düşer
+        self._ozel_klasor_onbellek = None
+        return kimlik
 
     def kalici_sil(self, mesaj: Mesaj) -> None:
         govde = (

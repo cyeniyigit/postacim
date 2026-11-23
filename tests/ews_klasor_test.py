@@ -87,6 +87,27 @@ def createfolder_yaniti(kimlik: str) -> str:
     )
 
 
+def degiskey_yaniti(kimlik: str) -> str:
+    """Klasörün güncel ChangeKey'i (yeniden adlandırma öncesi GetFolder)."""
+    return zarf(
+        "<m:Folders><t:Folder>"
+        f'<t:FolderId Id="{kimlik}" ChangeKey="CK-GUNCEL"/>'
+        "</t:Folder></m:Folders>"
+    )
+
+
+def updatefolder_yaniti(kimlik: str) -> str:
+    return zarf(
+        "<m:UpdateFolderResponseMessage ResponseClass=\"Success\">"
+        "<m:ResponseCode>NoError</m:ResponseCode>"
+        "<m:Folders><t:Folder>"
+        f'<t:FolderId Id="{kimlik}" ChangeKey="CK-YENI"/>'
+        "<t:DisplayName>Yeni Ad</t:DisplayName>"
+        "</t:Folder></m:Folders>"
+        "</m:UpdateFolderResponseMessage>"
+    )
+
+
 def main() -> int:
     print("== ews: klasör oluşturma + kullanıcı klasörleri ==")
     istemci = ews_mod.EwsIstemci(
@@ -112,8 +133,13 @@ def main() -> int:
         istekler.append(govde)
         if "CreateFolder" in govde:
             return ET.fromstring(createfolder_yaniti("ID-NOTLAR"))
+        if "UpdateFolder" in govde:
+            return ET.fromstring(updatefolder_yaniti("ID-PROJE"))
         if "FindFolder" in govde:
             return ET.fromstring(findfolder_yaniti())
+        if "GetFolder" in govde and '<t:FolderId Id="ID-PROJE"' in govde:
+            # Kullanıcı klasörünün güncel ChangeKey'i isteniyor
+            return ET.fromstring(degiskey_yaniti("ID-PROJE"))
         return ET.fromstring(getfolder_yaniti())
 
     istemci.istek = sahte_istek  # noqa: SLF001 — test amaçlı değiştirme
@@ -161,6 +187,35 @@ def main() -> int:
     find_sayisi_2 = sum(1 for g in istekler if "FindFolder" in g)
     kontrol(find_sayisi == find_sayisi_2,
             "önbellek süresi dolmadan FindFolder tekrarlanmaz")
+
+    # --- klasor_yeniden_adlandir: GetFolder (ChangeKey) + UpdateFolder ---
+    istemci.istek = sahte_istek
+    istemci._ozel_klasor_onbellek = ["eski"]  # düşürülceğini görmek için
+    istekler.clear()
+    donen = istemci.klasor_yeniden_adlandir("ID-PROJE", "Yeni Ad")
+    kontrol(donen == "ID-PROJE", "EWS'te kimlik adlandırmada değişmez")
+    istekler_y = [g for g in istekler if "UpdateFolder" in g]
+    kontrol(len(istekler_y) == 1, "UpdateFolder bir kez gönderildi")
+    govde = istekler_y[0]
+    kontrol('FieldURI="folder:DisplayName"' in govde,
+            "DisplayName alanı güncelleniyor")
+    kontrol("<t:DisplayName>Yeni Ad</t:DisplayName>" in govde,
+            "yeni ad gövdede")
+    kontrol('<t:FolderId Id="ID-PROJE" ChangeKey="CK-GUNCEL"/>' in govde,
+            "güncel ChangeKey GetFolder'dan alınıp kullanıldı")
+    kontrol(istemci._ozel_klasor_onbellek is None,
+            "adlandırma FindFolder önbelleğini düşürür")
+    try:
+        istemci.klasor_yeniden_adlandir("inbox", "Gelen 2")
+        kontrol(False, "varsayılan klasör adlandırılmamalı")
+    except ews_mod.EwsHata as exc:
+        kontrol("adlandırılamaz" in str(exc),
+                f"varsayılan klasör koruması ({exc})")
+    try:
+        istemci.klasor_yeniden_adlandir("ID-PROJE", "   ")
+        kontrol(False, "boş yeni ad hata fırlatmalı")
+    except ews_mod.EwsHata as exc:
+        kontrol("boş" in str(exc), f"boş ad reddedildi ({exc})")
 
     # --- FindFolder hatası: liste yine de dönülür ---
     istemci._ozel_klasor_onbellek = None

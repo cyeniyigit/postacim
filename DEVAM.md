@@ -1086,3 +1086,48 @@ ve Exchange).
   olarak denenmedi (FindItem sunucuda zaten bozuk). Desteklemiyorsa:
   klasörler listelenmez/oluşturulamaz ama uygulama çalışmaya devam eder
   (hata yolları testli). Canlı deneme kullanıcının onayına bırakıldı.
+
+## Klasör yeniden adlandırma (sağ tuş) (2026-11-23)
+
+**Talep:** "varolan bir klasörün adını değiştirmek istiyorum" (0.1.9'daki
+oluşturma/silme eksik bıraktı).
+
+### Değişiklikler
+- **`imap.py → klasor_yeniden_adlandir(kimlik, yeni_ad)`**: `RENAME`.
+  - IMAP'te **kimlik = ad**: başarılı olunca yeni kimlik (utf-7 kod) döner,
+    `_klasor_adlari` taşıınır (eski düşer, yeni eklenir) ve eski klasörün
+    `_onbellek` kaydı bırakılır (ilk açılışta baştan çekilir).
+  - `SIRA` koruması (inbox, sentitems, … reddedilir); boş ad/kontrol
+    karakteri hata; sunucu reddi → okunur `EwsHata`; aynı ad no-op
+    (sunucuya gitmez).
+- **`ews.py → klasor_yeniden_adlandir(kimlik, yeni_ad)`**: kimlik **değişmez**.
+  - Exchange yazmada güncel ChangeKey ister → önce tek `GetFolder`
+    (Default shape) ile `Id + ChangeKey` tazelenir, sonra `UpdateFolder`
+    + `SetItemField folder:DisplayName` (her ikisi **tekrar=1**).
+  - `KLASORLER` (7 varsayılan) reddedilir; boş ad hata; başarıda
+    FindFolder önbelleği düşer → ağaçta yeni ad hemen görünür.
+- **`ui.py`:**
+  - Menüde **"Yeniden Adlandır…"** — aktif hesap + özel olmayan klasör
+    (IMAP etiketi *veya* EWS kullanıcı klasörü; `kimlik not in SIRA and
+    kimlik not in KLASORLER`). IMAP'te adlandırmanın altında ayrıca
+    "Klasörü Sil…"; EWS'te silme yok.
+  - `_klasor_adi_penceresi(ilk, baslik)`: öndoldurma + `selection_range`
+    (tümü seçili) + düğme metni "Değiştir"; aynı ad → no-op; boş ad →
+    `showwarning`. `_arka_plan`da çalışır; `("yenile", …)` ile liste tazelenir.
+
+### Testler (hepsi geçti)
+- `ews_klasor_test.py`: UpdateFolder gövdesi (ChangeKey tazeleme,
+  FieldURI, yeni ad), kimlik değişmez, önbellek düşer; varsayılan klasör ve
+  boş ad reddi
+- `coklu_hesap_test.py`: RENAME teli (ascii + utf-7 ad), harita/önbellek
+  taşıma, `SIRA` koruması, sunucu reddi, boş ad, aynı-ad no-op
+- `imap_yerel_sunucu_test.py`: ham `RENAME "Proje X" "Proje 2"`
+- `hesap_ui_test.py`: menü öğeleri (IMAP özel klasörde adlandır+sil;
+  EWS kullanıcı klasöründe yalnız adlandır; inbox/hesap düğümünde yok),
+  akış IMAP + EWS istemcisine ulaşır, aynı ad/boş ad uyarısı
+
+### Not
+- IMAP'te aktif klasörün adlandırılması: kimlik değiştiği için yenileme
+  sonrası seçim ilk klasöre düşer (silme ile aynı mekanizma).
+- EWS `UpdateFolder` canlı sunucuda denenmedi (testler mock'lu);
+  `CreateFolder`/`FindFolder` gibi kullanıcı onayında canlı doğrulanacak.
