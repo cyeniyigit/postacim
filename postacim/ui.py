@@ -696,10 +696,12 @@ class Postacim(tk.Tk):
         # Listbox ikon desteklemez; uzantı ikonları için Treeview kullanılır.
         self.ek_listesi = ttk.Treeview(
             self.ek_cerçeve, show="tree", height=3,
-            selectmode="browse", style="Ek.Treeview",
+            selectmode="extended", style="Ek.Treeview",
         )
         self.ek_listesi.pack(fill="x")
         self.ek_listesi.bind("<Double-Button-1>", lambda e: self.ek_indir())
+        self.ek_listesi.bind("<Control-a>", self._ek_tumunu_sec)
+        self.ek_listesi.bind("<Button-3>", self._ek_menusu)
         self.ana.add(sag, weight=2)
 
         # --- Takvim sekmesi ---
@@ -2449,6 +2451,8 @@ class Postacim(tk.Tk):
             self._resim_gosterilemedi(veri[1], veri[2])
         elif tur == "ek":
             self._ek_kaydet(veri[1], veri[2])
+        elif tur == "ek_toplu":
+            self._ekleri_indir_goster(veri[1], veri[2], veri[3])
         elif tur == "basarili":
             self.durum.set(veri[1])
         elif tur == "yenile":
@@ -3619,18 +3623,78 @@ class Postacim(tk.Tk):
         }
         return self.ikon.get(harita.get(uzanti, "ek_dosya")) or self.ikon["ek"]
 
-    def ek_indir(self):
+    def _ek_tumunu_sec(self, olay=None):
+        """Ek listesindeki tüm dosyaları seçer (Ctrl+A)."""
+        self.ek_listesi.selection_set(self.ek_listesi.get_children())
+        return "break"
+
+    def _ek_menusu(self, olay):
+        """Ek listesinde sağ tuş: seçilenleri / tümünü indir."""
+        satir = self.ek_listesi.identify_row(olay.y)
+        if satir and satir not in self.ek_listesi.selection():
+            self.ek_listesi.selection_set(satir)
         secim = self.ek_listesi.selection()
         if not secim:
             return
-        ek = self.ek_listesi.ekler[int(secim[0])]
-        self.durum.set(f"{ek.ad} indiriliyor…")
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label=f"Seçilenleri indir ({len(secim)})", command=self.ek_indir
+        )
+        menu.add_command(label="Tümünü indir…", command=self._ek_tumunu_indir)
+        menu.tk_popup(olay.x_root, olay.y_root)
+
+    def _ek_tumunu_indir(self):
+        self.ek_listesi.selection_set(self.ek_listesi.get_children())
+        self.ek_indir()
+
+    def ek_indir(self):
+        """Seçili ekleri indirir; birden çok seçiliyse klasöre topluca yazar."""
+        secim = self.ek_listesi.selection()
+        if not secim:
+            return
+        ekler = [self.ek_listesi.ekler[int(i)] for i in secim]
+        if len(ekler) == 1:
+            ek = ekler[0]
+            self.durum.set(f"{ek.ad} indiriliyor…")
+            threading.Thread(
+                target=self._arka_plan, args=(self._ek_indir_cek, ek), daemon=True
+            ).start()
+            return
+        dizin = dosya_secici.dizin_sec("Eklerin kaydedileceği klasör")
+        if not dizin:
+            return
+        self.durum.set(f"{len(ekler)} ek indiriliyor…")
         threading.Thread(
-            target=self._arka_plan, args=(self._ek_indir_cek, ek), daemon=True
+            target=self._arka_plan,
+            args=(self._ekleri_indir_cek, ekler, dizin), daemon=True,
         ).start()
 
     def _ek_indir_cek(self, ek):
         return ("ek", ek, self.istemci.ek_indir(ek))
+
+    def _ekleri_indir_cek(self, ekler, dizin):
+        """Ekleri tek tek indirip hedef klasöre yazar (arka plan)."""
+        kaydedilen, hatalar = [], []
+        for ek in ekler:
+            try:
+                veri = self.istemci.ek_indir(ek)
+                yol = _benzersiz_yol(dizin, ek.ad)
+                with open(yol, "wb") as f:
+                    f.write(veri)
+                kaydedilen.append(os.path.basename(yol))
+            except Exception as hata:  # tek ek hatası diğerlerini durdurmasın
+                hatalar.append(f"{ek.ad}: {hata}")
+        return ("ek_toplu", kaydedilen, hatalar, dizin)
+
+    def _ekleri_indir_goster(self, kaydedilen, hatalar, dizin):
+        if kaydedilen:
+            self.durum.set(f"{len(kaydedilen)} ek kaydedildi → {dizin}")
+        elif hatalar:
+            self.durum.set("Ekler indirilemedi")
+        if hatalar:
+            messagebox.showwarning(
+                "Bazı ekler indirilemedi", "\n".join(hatalar)
+            )
 
     def _ek_kaydet(self, ek, veri):
         hedef = dosya_secici.dosya_kaydet(
@@ -4349,6 +4413,25 @@ class HesapPenceresi(tk.Toplevel):
     def ac(self):
         """Pencereyi gösterir ve kapanmasını bekler."""
         self.wait_window()
+
+
+def _temiz_dosya_adi(ad: str) -> str:
+    """Ek adını güvenli tek dosya adına çevirir (yol ayırıcıları atılır)."""
+    ad = os.path.basename((ad or "").replace("\\", "/"))
+    ad = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", ad).strip(" .")
+    return ad or "ek"
+
+
+def _benzersiz_yol(dizin: str, ad: str) -> str:
+    """Klasörde aynı ad varsa ' (1)', ' (2)' … ekleyerek çakışmayı önler."""
+    ad = _temiz_dosya_adi(ad)
+    kok, uzanti = os.path.splitext(ad)
+    yol = os.path.join(dizin, ad)
+    sayac = 1
+    while os.path.exists(yol):
+        yol = os.path.join(dizin, f"{kok} ({sayac}){uzanti}")
+        sayac += 1
+    return yol
 
 
 def _kisi_kayitlari(metin: str) -> list:

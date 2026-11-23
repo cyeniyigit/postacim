@@ -984,6 +984,37 @@ güncellemede `If-Match` doğru gider.
 - `zenity` seçenekleri Xvfb altında denendi (aç/kaydet pencereleri hatasız
   açıldı).
 
+---
+
+# 2026-11-23 (2) — Birden çok eki topluca indirme
+
+> **Kaldığımız yer:** Ek listesi tek seçimlikti (`selectmode="browse"`);
+> her ek için ayrı ayrı "farklı kaydet" penceresi açılıyordu. Kullanıcı
+> birden çok eki seçip tek seferde indirmek istedi. (Sürüm 0.1.8)
+
+## 1. Arayüz
+- `ek_listesi` → `selectmode="extended"`: Ctrl/Shift ile çoklu seçim,
+  Ctrl+A ile tümü, sağ tık menüsü ("Seçilenleri indir (N)",
+  "Tümünü indir…").
+- Tek ek seçilirse eski davranış korunur (dosya adı sorulur).
+- Birden çok ekte `dosya_secici.dizin_sec` ile hedef klasör sorulur
+  (zenity `--directory` / kdialog / tk yedeği).
+
+## 2. İndirme
+- `_ekleri_indir_cek`: ekleri tek arka plan işinde indirir, her birini
+  hedef klasöre yazar. Yol ayırıcıları ve geçersiz karakterler
+  (`_temiz_dosya_adi`) dosya adından temizlenir.
+- Aynı ad çakışması `_benzersiz_yol` ile ` (1)`, ` (2)` eklenerek çözülür;
+  var olan dosyanın üzerine yazılmaz.
+- Tek ek hatası diğerlerini durdurmaz; sonuçta "Bazı ekler indirilemedi"
+  uyarısı ve durum çubuğunda kaydedilen sayı gösterilir.
+
+## 3. Testler
+- `tests/ek_indir_test.py`: ad temizliği, çakışma çözümü, toplu kayıt ve
+  kısmi hata dayanıklılığı.
+- `tests/dosya_secici_test.py`: klasör seçimi (`zenity --directory`).
+- `tests/run_all.sh` güncellendi; tüm çevrimdışı testler geçti.
+
 ## Kalan işler
 - [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
       (`RECURRENCE-ID`)

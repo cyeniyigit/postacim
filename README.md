@@ -308,9 +308,11 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
 - **Düzenleme:** okundu/okunmadı işaretleme, silme (Silinmiş Öğeler'e taşınır);
   **sil/taşı çoklu seçimle çalışır ve bittiğinde liste + klasör sayaçları
   otomatik yenilenir**
-- **Ek indirme:** ekleri dosyaya kaydetme; listede **uzantıya özel renkli
-  sayfa ikonu** (PDF/Word/Excel/PowerPoint/ZIP/resim/metin/e-posta/video/ses
-  — uzantı bilinmeyenler genel sayfa)
+- **Ek indirme:** ekleri dosyaya kaydetme; **birden çok ek seçip (Ctrl/Shift
+  veya Ctrl+A) tek klasöre topluca indirme**, sağ tık menüsünde "Tümünü
+  indir"; aynı adlı dosyalar ` (1)`, ` (2)` eklenerek korunur. Listede
+  **uzantıya özel renkli sayfa ikonu** (PDF/Word/Excel/PowerPoint/ZIP/
+  resim/metin/e-posta/video/ses — uzantı bilinmeyenler genel sayfa)
 - **Takvim (CalDAV + EWS):** Ay/Hafta/Gün görünümleri, ajanda paneli, yeni
   randevu penceresi (konum, açıklama, takvim hesabı seçimi, **tekrarlama**),
   **tekrarlayan olayların (RRULE) genişletilmesi**, randevu tamamlandı işareti,

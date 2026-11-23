@@ -242,6 +242,40 @@ def dosya_ac_coklu(baslik: str = "Dosya seç", baslangic: str | None = None,
     return dosya_ac(baslik, baslangic, turler, coklu=True)  # type: ignore[return-value]
 
 
+def dizin_sec(baslik: str = "Klasör seç",
+              baslangic: str | None = None) -> str:
+    """Kayıt için hedef klasörü seçtirir; iptalde `""` döner."""
+    arac = _komut_sec()
+    baslangic = baslangic or _baslangic_dizini()
+    try:
+        if arac == "zenity":
+            komut = [
+                "zenity", "--file-selection", "--directory", "--modal",
+                f"--title={baslik}", f"--filename={baslangic}{os.sep}",
+            ]
+            basarili, cikti = _calistir(komut)
+        elif arac == "kdialog":
+            basarili, cikti = _calistir([
+                "kdialog", "--title", baslik,
+                "--getexistingdirectory", baslangic,
+            ])
+        else:
+            cikti = filedialog.askdirectory(
+                title=baslik, initialdir=baslangic, mustexist=True
+            )
+            basarili = bool(cikti)
+    except OSError:
+        cikti = filedialog.askdirectory(
+            title=baslik, initialdir=baslangic, mustexist=True
+        )
+        basarili = bool(cikti)
+
+    if not basarili or not cikti:
+        return ""
+    _dizini_hatirla(cikti)
+    return cikti
+
+
 def dosya_kaydet(baslik: str = "Kaydet", baslangic: str | None = None,
                  turler=None, varsayilan_uzanti: str | None = None) -> str:
     """Kaydedilecek dosya yolunu seçtirir; iptalde `""` döner.

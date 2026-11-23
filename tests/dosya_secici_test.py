@@ -134,6 +134,16 @@ def main() -> int:
             kontrol("--getopenfilename" in komut, "kdialog açma kipi")
             kontrol("--multiple" in komut, "kdialog çoklu seçim")
 
+        print("zenity: klasör seç")
+        os.environ["POSTACIM_DOSYA_SECICI"] = "zenity"
+        ds.shutil.which = which_sadece("zenity")
+        komutlar.clear()
+        ds._calistir = lambda komut: (komutlar.append(komut) or True, "/tmp/opencode/ekler")
+        dizin = ds.dizin_sec("Eklerin kaydedileceği klasör")
+        kontrol(dizin == "/tmp/opencode/ekler", "seçilen klasör döner")
+        if komutlar:
+            kontrol("--directory" in komutlar[0], "zenity klasör kipi")
+
         print("tk yedeği")
         os.environ["POSTACIM_DOSYA_SECICI"] = "zenity"
         ds.shutil.which = which_sadece("zenity")

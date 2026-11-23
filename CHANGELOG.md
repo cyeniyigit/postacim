@@ -3,6 +3,26 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.8] — 2026-11-23
+
+### Eklenen
+- **Birden çok ek seçip topluca indirme.** Ek listesi artık çoklu seçime
+  açık (Ctrl/Shift ile tıklama, Ctrl+A ile tümü). Birden fazla ek seçilince
+  hedef klasör sorulur ve tüm ekler tek işlemde oraya yazılır; tek ek
+  seçiminde eskisi gibi "farklı kaydet" penceresi açılır.
+- Ek listesinde sağ tık menüsü: "Seçilenleri indir (N)" ve "Tümünü indir…".
+- Aynı adlı dosyalar üzerine yazılmaz; `ad (1).uzantı`, `ad (2).uzantı` …
+  biçiminde benzersiz ad üretilir. Yol ayırıcıları ve geçersiz karakterler
+  dosya adından temizlenir.
+- Bir ek indirilemezse diğerleri kaydedilmeye devam eder; sonunda hangi
+  eklerin indirilemediği uyarı olarak gösterilir.
+- Klasör seçimi de yerel dosya seçiciyi kullanır (`dosya_secici.dizin_sec`).
+
+### Testler
+- `tests/ek_indir_test.py` — dosya adı temizliği, çakışma çözümü, toplu
+  indirme ve kısmi hata dayanıklılığı.
+- `tests/dosya_secici_test.py` — klasör seçimi (zenity `--directory`).
+
 ## [0.1.7] — 2026-11-23
 
 ### Değişen
