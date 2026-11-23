@@ -192,6 +192,19 @@ class SahteImap:
             return ("OK", [b" ".join(str(u).encode() for u in self.uidler)])
         if komut == "fetch":
             kume = args[0]
+            spec = args[1] if len(args) > 1 else ""
+            if "BODY.PEEK[]" in spec or "BODY[]" in spec:
+                # Tam gövde istekleri (BODY.PEEK[]) ayrı oturumdan gelir
+                secili = [int(u) for u in str(kume).split(",") if u.isdigit()]
+                yanit = []
+                for u in secili:
+                    ham = _tam_ileti(u)
+                    yanit.append((
+                        f"{u} (UID {u} BODY[] {{{len(ham)}}}".encode(),
+                        ham,
+                    ))
+                    yanit.append(b")")
+                return ("OK", yanit)
             secili = [int(u) for u in str(kume).split(",") if u.isdigit()]
             yanit = []
             for u in secili:
@@ -255,6 +268,29 @@ def _zarf(ad, adres, konu, tarih, bayrak=""):
         "",
     ]
     return "\r\n".join(basliklar).encode("utf-8")
+
+
+def _tam_ileti(uid: int) -> bytes:
+    """Tam MIME ileti: metin gövde + ek (BODY.PEEK[] yanıtı)."""
+    return (
+        "From: Ali Veli <ali@ornek.gov.tr>\r\n"
+        "To: ben@ornek.gov.tr\r\n"
+        "Cc: bilgi@ornek.gov.tr\r\n"
+        f"Subject: Rapor {uid}\r\n"
+        "Date: Tue, 18 Nov 2026 09:15:00 +0300\r\n"
+        'Content-Type: multipart/mixed; boundary="SNR"\r\n'
+        "\r\n"
+        "--SNR\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "\r\n"
+        f"Merhaba gövde {uid}\r\n"
+        "--SNR\r\n"
+        'Content-Type: application/pdf; name="rapor.pdf"\r\n'
+        'Content-Disposition: attachment; filename="rapor.pdf"\r\n'
+        "\r\n"
+        "PDFICERIK\r\n"
+        "--SNR--\r\n"
+    ).encode("utf-8")
 
 
 def imap_test():
@@ -484,6 +520,42 @@ def imap_test():
             kontrol("boş" in str(exc), f"boş yeni ad reddedildi ({exc})")
         ayni = istemci.klasor_yeniden_adlandir("Proje 2", "Proje 2")
         kontrol(ayni == "Proje 2", "aynı ad no-op, sunucuya gitmedi")
+
+        # --- Gövde ayrı oturumda: mesaj_detay senkronu beklemez ---
+        # Ana oturumu BYE'e düşür (sunucu senkron sırasında kapandı gibi):
+        # eski davranışta mesaj_detay ya hata verir ya da senkron bitmesini
+        # beklerdi; artık ayrı oturum kendi başına bağlanır.
+        mesaj = istemci.mesajlar(klasor="inbox", tazele=True)[0][0]
+        istemci.imap.state = "LOGOUT"  # ana oturum kapandı (BYE sonrası)
+        detay = istemci.mesaj_detay(mesaj)
+        kontrol("Merhaba gövde" in (detay.govde or ""),
+                f"gövde ayrı oturumdan yüklendi ({detay.govde!r})")
+        kontrol(detay.alici == "ben@ornek.gov.tr"
+                and detay.bilgi == "bilgi@ornek.gov.tr",
+                "To/Cc ayrıştırıldı")
+        kontrol(len(detay.ekler) == 1 and detay.ekler[0].ad == "rapor.pdf",
+                "ek listesi MIME'den geldi")
+        kontrol(istemci._detay_imap is not None,
+                "gövde oturumu ayrı bağlantı olarak kuruldu")
+        ham_fetch = [
+            k for k in istemci._detay_imap.komutlar if k[0] == "fetch"
+        ]
+        kontrol(bool(ham_fetch), "FETCH gövde oturumuna gitti")
+        kontrol(
+            all(k[0] != "fetch" or k[1] and "BODY.PEEK[]" not in k[1][-1]
+                for k in istemci.imap.komutlar),
+            "ana oturuma BODY.PEEK[] fetch gitmedi",
+        )
+        # Ek indirme ve .eml de gövde oturumunu kullanır
+        icerik = istemci.ek_indir(detay.ekler[0])
+        kontrol(icerik == b"PDFICERIK", f"ek indirildi ({icerik!r})")
+        kontrol(isinstance(istemci.mesaj_mime(mesaj.item_id), bytes),
+                ".eml (mesaj_mime) döndürüldü")
+        # İkinci çağrı önbellekten: gövde oturumuna yeni FETCH gitmez
+        onceki = len(istemci._detay_imap.komutlar)
+        istemci.mesaj_detay(mesaj)
+        kontrol(len(istemci._detay_imap.komutlar) == onceki,
+                "ikinci mesaj_detay önbellekten okundu")
 
 
 def smtp_test():

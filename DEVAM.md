@@ -1166,3 +1166,49 @@ sildim, ikinci sayfa yüklenince fare ile seçerken program kırılıp kapandı.
 - `silme_sayfa_test.py` (**yeni**, `run_all.sh`'e eklendi): kullanıcı
   senaryosu + sayfa küçülme yolu + fare basılıyken erteleme / bırakınca
   uygulama + `hata.log` yazımı (XDG_STATE_HOME test dizinine yönlendirilir)
+
+## Seçilen mail klasör yüklenirken beklemesin (2026-11-23)
+
+**Rapor:** "seçtiğim mail, inbox yüklenirken biraz bekleme yapıyor;
+iyileştirme yapılabilir mi?"
+
+### Teşhis
+Seçilen mesajın gövdesi (`BODY.PEEK[]`) ana IMAP oturumunu kullanan
+`mesaj_detay`'dan geliyordu; `mesaj_detay` `@_kilitli` olduğundan klasör
+senkronizasyonu (tam senkron ~15 sn) bitmeden **kuyrukta bekliyordu** —
+"Gelen Kutusu yüklenirken maili seçiyorum, açılmıyor" un nedeni bu seri
+bağlanmaydı.
+
+### Değişiklikler (`imap.py`)
+- **Ayrı gövde oturumu:** `_detay_imap` (+ `_kilit_detay`), `_yeni_baglanti`
+  ortak bağlantı kurucuya çıkarıldı; `_baglan_detay`, `_komut_detay`
+  (BYE/abort kurtarmalı), `_sec_detay` (readonly SELECT) eklendi.
+- `mesaj_detay`, `ek_indir`, `mesaj_mime` artık `_kilitli` değil — ağ kısmı
+  `_mime_cek` → `_mime_detay_cek` (ayrı oturum) içinde `_kilit_detay` altında.
+- **Yedek yol:** sunucu ikinci oturumu reddederse `_mime_ana_cek` (ana
+  oturum, eski davranış) çalışır.
+- `_mesaj_klasoru` artık `_onbellek` taramasını ana kilitte yapar
+  (paralel taramada dict mutation çökmesin).
+- `_kop` gövde oturumunu da kapatır.
+- `detay_hazirla()`: gövde oturumunu önden açar (hataları yutar).
+- `gelen_sayisi` üstündeki yanlışlıkla çift `@_kilitli` temizlendi.
+
+### `ui.py`
+- `_mesajlari_cek`: klasör yüklendikten sonra arka planda `detay_hazirla`
+  çağrılır → ilk seçimde bağlantı kurulma beklemesi olmaz.
+- `_mesaj_secildi`: seçilen mesajın gövdesi zaten önbellekteyse (daha önce
+  görüntülenmiş) `_detay_goster` **anında** çalışır; ağ yok.
+
+### Testler (hepsi geçti)
+- `coklu_hesap_test.py`: sahte IMAP'a tam gövde FETCH (`BODY.PEEK[]`)
+  desteği eklendi; ana oturum `LOGOUT`'a düşürülmüşken (senkron kilitli
+  gibi) `mesaj_detay` gövdeyi ayrı oturumdan yükler; FETCH'ler ana
+  oturuma gitmez; To/Cc + ek listesi ayrıştırılır; `ek_indir` (PDFICERIK),
+  `mesaj_mime`; ikinci çağrı önbellekten (yeni FETCH yok)
+
+### Not
+- İki IMAP oturumu Gmail'de sorun olmaz. Bağlantı sayısı sınırı olan
+  sunucularda yedek yol devrede kalır (eski davranış, beklemeli).
+- Daha büyük kazanç (ekteki mesajlarda gövdeyi kısmi çekmek: BODYSTRUCTURE
+  + parça bazlı FETCH) ayrı bir iş olarak değerlendirilebilir — henüz
+  yapılmadı.

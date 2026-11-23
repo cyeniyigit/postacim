@@ -159,8 +159,44 @@ class ImapIstemci:
         self._onbellek: dict = {}        # klasör → kayıt dict'i
         self._mime_onbellek: dict[str, bytes] = {}
         self._kilit = threading.RLock()  # imaplib bağlantısı tek thread'de
+        # Gövde indirmeleri ayrı oturumda yürür: klasör senkronizasyonu
+        # sürerken seçilen mail beklemesin (mesaj_detay/ek_indir/.eml)
+        self._detay_imap: imaplib.IMAP4 | None = None
+        self._detay_secili: str | None = None
+        self._kilit_detay = threading.RLock()
 
     # ------------------------------------------------------------ bağlantı
+
+    def _yeni_baglanti(self) -> imaplib.IMAP4:
+        """Yeni bir IMAP oturumu açar ve giriş yapar; hazır bağlantı döner."""
+        if not self.kullanici or not self.parola:
+            raise EwsYetkiHatasi(
+                "E-posta veya uygulama parolası girilmemiş."
+            )
+        try:
+            if self.guvenli == "starttls":
+                baglanti = imaplib.IMAP4(self.gelen_sunucu, self.gelen_port,
+                                         timeout=30)
+                baglanti.starttls()
+            else:
+                baglanti = imaplib.IMAP4_SSL(self.gelen_sunucu, self.gelen_port,
+                                             timeout=30)
+            baglanti.login(self.kullanici, self.parola)
+            return baglanti
+        except (imaplib.IMAP4.error, imaplib.IMAP4.abort) as exc:
+            metin = str(exc).lower()
+            if any(x in metin for x in ("auth", "login", "credential",
+                                        "password", "user")):
+                raise EwsYetkiHatasi(
+                    "IMAP kimlik doğrulama başarısız. Gmail için normal parola "
+                    "değil, uygulama parolası kullanılmalı (Google Hesabı → "
+                    "Güvenlik → 2 Adımlı Doğrulama → Uygulama parolaları)."
+                ) from exc
+            raise EwsHata(f"IMAP hatası: {exc}") from exc
+        except (OSError, socket.error) as exc:
+            raise requests.RequestException(
+                f"Bağlantı kurulamadı: {self.gelen_sunucu}:{self.gelen_port} — {exc}"
+            ) from exc
 
     def _baglan(self) -> None:
         with self._kilit:
@@ -170,36 +206,12 @@ class ImapIstemci:
                 if getattr(self.imap, "state", "") != "LOGOUT":
                     return
                 self._kop()
-            if not self.kullanici or not self.parola:
-                raise EwsYetkiHatasi(
-                    "E-posta veya uygulama parolası girilmemiş."
-                )
             try:
-                if self.guvenli == "starttls":
-                    self.imap = imaplib.IMAP4(self.gelen_sunucu, self.gelen_port,
-                                              timeout=30)
-                    self.imap.starttls()
-                else:
-                    self.imap = imaplib.IMAP4_SSL(self.gelen_sunucu, self.gelen_port,
-                                                  timeout=30)
-                self.imap.login(self.kullanici, self.parola)
+                self.imap = self._yeni_baglanti()
                 self._secili = None
-            except (imaplib.IMAP4.error, imaplib.IMAP4.abort) as exc:
+            except Exception:
                 self.imap = None
-                metin = str(exc).lower()
-                if any(x in metin for x in ("auth", "login", "credential",
-                                            "password", "user")):
-                    raise EwsYetkiHatasi(
-                        "IMAP kimlik doğrulama başarısız. Gmail için normal parola "
-                        "değil, uygulama parolası kullanılmalı (Google Hesabı → "
-                        "Güvenlik → 2 Adımlı Doğrulama → Uygulama parolaları)."
-                    ) from exc
-                raise EwsHata(f"IMAP hatası: {exc}") from exc
-            except (OSError, socket.error) as exc:
-                self.imap = None
-                raise requests.RequestException(
-                    f"Bağlantı kurulamadı: {self.gelen_sunucu}:{self.gelen_port} — {exc}"
-                ) from exc
+                raise
 
     def _kop(self) -> None:
         with self._kilit:
@@ -210,6 +222,78 @@ class ImapIstemci:
                 pass
             self.imap = None
             self._secili = None
+        self._kop_detay()
+
+    # ------------------------------------------------- gövde bağlantısı (ayrı)
+
+    def _baglan_detay(self) -> None:
+        """Gövde indirmeleri için **ayrı** IMAP oturumu açar.
+
+        Neden ayrı? Mesaj gövdesi (BODY.PEEK[]) yavaş bir indirme olabilir;
+        aynı oturumda klasör senkronizasyonu sürerken beklemek yerine
+        paralel bağlantı kullanılır — klasör yüklenirken de seçilen mail
+        hemen açılır. İki oturum IMAP sunucularında sorun olmaz.
+        """
+        with self._kilit_detay:
+            if self._detay_imap is not None:
+                if getattr(self._detay_imap, "state", "") != "LOGOUT":
+                    return
+                self._kop_detay()
+            try:
+                self._detay_imap = self._yeni_baglanti()
+                self._detay_secili = None
+            except Exception:
+                self._detay_imap = None
+                raise
+
+    def detay_hazirla(self) -> None:
+        """Gövde bağlantısını önceden açar (arka planda ısınma)."""
+        try:
+            self._baglan_detay()
+        except (EwsHata, requests.RequestException):
+            pass  # ilk gerçek gövde çekiminde yeniden denenecek
+
+    def _kop_detay(self) -> None:
+        with self._kilit_detay:
+            try:
+                if self._detay_imap is not None:
+                    self._detay_imap.logout()
+            except Exception:
+                pass
+            self._detay_imap = None
+            self._detay_secili = None
+
+    def _komut_detay(self, ad: str, *args, **kwargs):
+        """`_komut`un gövde oturumu sürümü (`self._detay_imap` üzerinde)."""
+        with self._kilit_detay:
+            for deneme in range(2):
+                self._baglan_detay()
+                try:
+                    return getattr(self._detay_imap, ad)(*args, **kwargs)
+                except (imaplib.IMAP4.abort, OSError) as exc:
+                    self._kop_detay()
+                    if deneme == 0:
+                        continue
+                    raise requests.RequestException(
+                        f"Bağlantı koptu: {exc}"
+                    ) from exc
+                except imaplib.IMAP4.error as exc:
+                    if (getattr(self._detay_imap, "state", "") == "LOGOUT"
+                            and deneme == 0):
+                        self._kop_detay()
+                        continue
+                    raise EwsHata(f"IMAP komutu reddedildi: {exc}") from exc
+
+    def _sec_detay(self, klasor_adi: str) -> None:
+        """Gövde oturumunda klasör seçer (yazma erişimi gerekmez)."""
+        if self._detay_secili == klasor_adi:
+            return
+        tip, _ = self._komut_detay(
+            "select", _tirnakla(klasor_adi), readonly=True
+        )
+        if tip != "OK":
+            raise EwsHata(f"Klasör seçilemedi: {klasor_adi}")
+        self._detay_secili = klasor_adi
 
     def _komut(self, ad: str, *args, **kwargs):
         """IMAP komutu (`ad`: `self.imap` üzerindeki metod adı).
@@ -387,7 +471,6 @@ class ImapIstemci:
         return sayfa, toplam
 
     @_kilitli
-    @_kilitli
     def gelen_sayisi(self) -> int:
         """Gelen Kutusu'ndaki toplam mesaj sayısı (tek STATUS isteği)."""
         self._baglan()
@@ -537,9 +620,12 @@ class ImapIstemci:
 
     # ------------------------------------------------------- detay / ek / .eml
 
-    @_kilitli
     def mesaj_detay(self, mesaj: Mesaj) -> Mesaj:
-        """Mesaj gövdesini ve ek listesini doldurur (MIME üzerinden)."""
+        """Mesaj gövdesini ve ek listesini doldurur (MIME üzerinden).
+
+        `_kilitli` değildir: gövde indirmesi ayrı oturumda (`_kilit_detay`)
+        yürür, ana oturumun klasör senkronizasyonunu beklemez.
+        """
         ham = self._mime_cek(mesaj.item_id)
         msg = BytesParser(policy=mime_policy.default).parsebytes(ham)
         mesaj.alici = ", ".join(
@@ -580,51 +666,90 @@ class ImapIstemci:
         return mesaj
 
     def _mime_cek(self, mesaj_id: str) -> bytes:
-        """Mesajın tam MIME içeriğini indirir (onbellekli)."""
+        """Mesajın tam MIME içeriğini indirir (onbellekli).
+
+        Gövde indirmesi **ayrı oturumda** (`_detay_imap`) yapılır: klasör
+        senkronizasyonu sürerken bile seçilen mail beklemeksizin açılır.
+        Sunucu ikinci oturumu reddederse eski yola (ana oturum) dönülür.
+        """
         if not mesaj_id:
             raise EwsHata("Mesaj kimliği yok.")
         if mesaj_id in self._mime_onbellek:
             return self._mime_onbellek[mesaj_id]
+        try:
+            ham = self._mime_detay_cek(mesaj_id)
+        except EwsHata:
+            ham = self._mime_ana_cek(mesaj_id)
+        with self._kilit_detay:  # önbellek yazımı tek yerde
+            self._mime_onbellek[mesaj_id] = ham
+            while len(self._mime_onbellek) > MIME_SINIR:
+                self._mime_onbellek.pop(next(iter(self._mime_onbellek)))
+        return ham
+
+    def _mime_detay_cek(self, mesaj_id: str) -> bytes:
+        """MIME içeriğini ayrı (gövde) oturumunda çeker."""
         uid = int(mesaj_id)
         klasor = self._mesaj_klasoru(uid)
-        if klasor:
-            self._sec(klasor)
-        tip, veri = self._komut(
-            "uid", "fetch", str(uid), "(BODY.PEEK[])"
-        )
-        if tip != "OK":
-            raise EwsHata("Mesaj içeriği (MIME) alınamadı.")
-        ham = None
-        for parca in veri or []:
-            if isinstance(parca, tuple) and len(parca) >= 2 and isinstance(parca[1], bytes):
-                if ham is None or len(parca[1]) > len(ham):
-                    ham = parca[1]
+        with self._kilit_detay:
+            self._baglan_detay()
+            if klasor:
+                self._sec_detay(klasor)
+            tip, veri = self._komut_detay(
+                "uid", "fetch", str(uid), "(BODY.PEEK[])"
+            )
+            ham = self._fetch_govdesi(veri)
         if ham is None:
             raise EwsHata("Mesaj içeriği (MIME) alınamadı.")
-        self._mime_onbellek[mesaj_id] = ham
-        while len(self._mime_onbellek) > MIME_SINIR:
-            self._mime_onbellek.pop(next(iter(self._mime_onbellek)))
+        return ham
+
+    def _mime_ana_cek(self, mesaj_id: str) -> bytes:
+        """MIME içeriğini ana oturumda çeker (eski davranış; yedek yol)."""
+        uid = int(mesaj_id)
+        with self._kilit:
+            klasor = self._mesaj_klasoru(uid)
+            if klasor:
+                self._sec(klasor)
+            tip, veri = self._komut(
+                "uid", "fetch", str(uid), "(BODY.PEEK[])"
+            )
+            ham = self._fetch_govdesi(veri)
+        if ham is None:
+            raise EwsHata("Mesaj içeriği (MIME) alınamadı.")
+        return ham
+
+    @staticmethod
+    def _fetch_govdesi(veri) -> bytes | None:
+        """FETCH yanıtındaki en büyük ham bayt bloğunu döndürür."""
+        ham = None
+        for parca in veri or []:
+            if isinstance(parca, tuple) and len(parca) >= 2 \
+                    and isinstance(parca[1], bytes):
+                if ham is None or len(parca[1]) > len(ham):
+                    ham = parca[1]
         return ham
 
     def _mesaj_klasoru(self, uid: int) -> str | None:
-        """Mesajın bulunduğu seçili/onbellekli klasörü bulur."""
-        for klasor, kayit in self._onbellek.items():
-            if uid in kayit.get("mesajlar", {}):
-                return self._klasor_adi(klasor)
+        """Mesajın bulunduğu seçili/onbellekli klasörü bulur.
+
+        `_onbellek` ana oturum kilidi altında değişir; kısa bir tarama
+        olduğu için o kilide girilir (diğer iş parçacığını az bekletir).
+        """
+        with self._kilit:
+            for klasor, kayit in self._onbellek.items():
+                if uid in kayit.get("mesajlar", {}):
+                    return self._klasor_adi(klasor)
         return None
 
-    @_kilitli
     def ek_indir(self, ek: Ek) -> bytes:
-        """Eki mesajın MIME içeriğinden indirir."""
+        """Eki mesajın MIME içeriğinden indirir (gövde oturumunda)."""
         ham = self._mime_cek(ek.mesaj_id)
         veri = _mime_den_ek(ham, ek.ad)
         if veri is None:
             raise EwsHata(f"Ek indirilemedi: {ek.ad}")
         return veri
 
-    @_kilitli
     def mesaj_mime(self, mesaj_id: str) -> bytes:
-        """Mesajın tam MIME içeriğini (.eml) döndürür."""
+        """Mesajın tam MIME içeriğini (.eml) döndürür (gövde oturumunda)."""
         return self._mime_cek(mesaj_id)
 
     # ------------------------------------------------------------------ yazma

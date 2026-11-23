@@ -3,6 +3,29 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.12] — 2026-11-23
+
+### Düzeltmeler
+- **Seçilen mail artık klasör yüklenirken de beklemiyor.** Gövde
+  indirmeleri (mesaj detayı, ek indirme, .eml kaydı) **ayrı bir IMAP
+  oturumunda** yürür; eskiden hepsi klasör senkronizasyonunu tutan ana
+  oturumun kuyruğunda bekliyordu — "Gelen Kutusu yüklenirken maili
+  seçiyorum, açılması uzun sürüyor" durumunun asıl nedeni buydu.
+  - Gövde oturumu klasör listesi yüklenirken **önden açılır**
+    (`detay_hazirla`); ilk seçimde bağlantı kurulma beklemesi kalmaz.
+  - Sunucu ikinci oturumu reddederse eski yola (ana oturum) sessizce
+    dönülür.
+  - Daha önce görüntülenen bir mail yeniden seçildiğinde gövde
+    önbellekten **anında** gösterilir (ağ yok).
+  - `gelen_sayisi` üstündeki yanlışlıkla çiftlenmiş kilit dekoratörü
+    temizlendi.
+
+### Testler
+- `tests/coklu_hesap_test.py` — ana oturum BYE'e düşürülmüşken (klasör
+  senkronu kilitliyken) `mesaj_detay` gövdeyi ayrı oturumdan yükler;
+  `BODY.PEEK[]` FETCH'leri ana oturuma gitmez; ek indirme/.eml; ikinci
+  çağrı önbellekten okunur.
+
 ## [0.1.11] — 2026-11-23
 
 ### Düzeltmeler

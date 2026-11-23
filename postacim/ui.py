@@ -3221,6 +3221,10 @@ class Postacim(tk.Tk):
             tam=tam,
             tazele=tazele,
         )
+        if hasattr(self.istemci, "detay_hazirla"):
+            # IMAP gövde oturumunu şimdiden aç: ilk mesaj seçiminde
+            # bağlantı bekleme olmasın (klasör yüklenirken paralel).
+            threading.Thread(target=self.istemci.detay_hazirla, daemon=True).start()
         return ("mesajlar", mesajlar, toplam)
 
     def _mesajlari_doldur(self, mesajlar, toplam, durum_yaz: bool = True):
@@ -3323,6 +3327,10 @@ class Postacim(tk.Tk):
             self.durum.set(f"{len(secili)} mesaj seçildi — Sil/İçin Delete veya sağ tuş")
         else:
             self.durum.set("Mesaj okunuyor…")
+        if self.secili.govde or self.secili.govde_html:
+            # Gövde daha önce çekilmiş (onbellekte): anında göster
+            self._detay_goster(self.secili)
+            return
         threading.Thread(target=self._arka_plan, args=(self._detay_cek,), daemon=True).start()
 
     def _detay_cek(self):

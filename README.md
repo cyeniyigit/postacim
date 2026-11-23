@@ -406,6 +406,7 @@ MIME içeriğinden ayrılır).
 | Belirti | Sebep / çözüm |
 |---|---|
 | Yeni e-posta geldiğinde masaüstü uyarısı çıkmıyor | GNOME'da bildirim balonları kapalı olabilir (`show-banners=false`). Ayarlar ▸ Genel ▸ Bildirimler'de "Sistem bildirimlerini aç" düğmesine basın; uygulama ayrıca içinde uyarı penceresi gösterir. |
+| Bir maili seçince gövdesi geç açılıyor | Gelen Kutusu büyük klasörde ilk açılışta senkronizasyon sürer. Gövde indirmeleri artık **ayrı IMAP oturumunda** yürür — senkron bitmeden de mail açılır; gövde oturumu klasör yükleme sırasında önden açılır. Daha önce görüntülenen mail anında gelir. |
 | Gövde sağa kayıyor, içeriğin bir kısmı görünmüyor | Gövde alanındaki yatay kaydırma çubuğunu kullanın veya "Sığdır" düğmesiyle içeriği pencere genişliğine sığdırın. |
 | Menüde "Postacım" var ama tıklayınca hiçbir şey olmuyor | Masaüstü girdisinden açılan uygulamanın hata çıktısı ekrana basılmaz. Hata günlüğü: `~/.local/state/postacim/hata.log`. Sık nedenler: `python3-tk` eksik (`sudo apt install python3-tk`), sanal ortam bozulmuş (Python sürümü değişmiş olabilir). Çözüm: Postacım klasöründe `./kur.sh` ile yeniden kurun. |
 | Terminalden `postacim` çalıştırınca "No module named postacim" | Kurulum kaynak klasörüne bağlı kalmış. `./kur.sh` ile yeniden kurun (artık klasörü silebilirsiniz). |
