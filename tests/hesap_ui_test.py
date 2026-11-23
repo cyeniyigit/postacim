@@ -43,12 +43,16 @@ class SahteIstemci:
         self.silinenler: list = []  # klasor_sil çağrıları
         self.olusturulanlar: list = []  # klasor_olustur çağrıları
         self.adlandirilanlar: list = []  # klasor_yeniden_adlandir çağrıları
+        self.bosaltilanlar: list = []  # klasoru_bosalt çağrıları
 
     def klasor_listesi(self):
         return [
             Klasor(kimlik="inbox", ad="Gelen Kutusu", toplam=2, okunmamis=1),
             Klasor(kimlik="sentitems", ad="Gönderilmiş", toplam=0, okunmamis=0),
             Klasor(kimlik="drafts", ad="Taslaklar", toplam=0, okunmamis=0),
+            Klasor(kimlik="deleteditems", ad="Silinmiş Öğeler",
+                   toplam=6, okunmamis=0),
+            Klasor(kimlik="junkemail", ad="Önemsiz", toplam=3, okunmamis=0),
             # İkonsuz klasörler (Gmail etiketleri gibi): image=None Treeview'i
             # çökertmemeli — "value for "-image" missing" regresyonu
             Klasor(kimlik="Proje X", ad="Proje X", toplam=1, okunmamis=0),
@@ -96,6 +100,10 @@ class SahteIstemci:
     def klasor_yeniden_adlandir(self, kimlik, yeni_ad):
         self.adlandirilanlar.append((kimlik, yeni_ad))
         return kimlik
+
+    def klasoru_bosalt(self, kimlik):
+        self.bosaltilanlar.append(kimlik)
+        return 5
 
     def kalici_sil(self, mesaj):
         pass
@@ -253,6 +261,34 @@ def main() -> int:
                 f"hesap düğümünde yeni klasör öğesi var ({ogeler})")
         kontrol(uygulama._klasor_menu_olustur(f"{kurum_id}|inbox") is None,
                 "başka hesabın klasöründe menü yok")
+        kontrol(uygulama._klasor_menu_olustur(f"{kurum_id}|deleteditems") is None,
+                "başka hesabın çöp kutusunda menü yok")
+
+        # --- Çöp kutusu / spam boşaltma (sağ tuş menüsü) ---
+        ogeler = menu_komutlari(
+            uygulama._klasor_menu_olustur(f"{gmail_id}|deleteditems")
+        )
+        kontrol("Çöp Kutusunu Boşalt…" in ogeler,
+                f"çöp kutusunda boşaltma öğesi var ({ogeler})")
+        kontrol("Yeniden Adlandır…" not in ogeler
+                and "Klasörü Sil…" not in ogeler,
+                "çöp kutusunda adlandırma/silme yok")
+        ogeler = menu_komutlari(
+            uygulama._klasor_menu_olustur(f"{gmail_id}|junkemail")
+        )
+        kontrol("Spam'i Temizle…" in ogeler,
+                f"spam klasöründe temizleme öğesi var ({ogeler})")
+        kontrol("Çöp Kutusunu Boşalt…" not in ogeler,
+                "spam klasöründe çöp kutusu öğesi yok")
+        ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"{gmail_id}|inbox"))
+        kontrol("Çöp Kutusunu Boşalt…" not in ogeler
+                and "Spam'i Temizle…" not in ogeler,
+                "diğer klasörlerde boşaltma öğesi yok")
+        # Akış: onay (askyesno=True) → istemci.klasoru_bosalt çağrılır
+        uygulama.klasoru_bosalt("deleteditems")
+        bekle(uygulama, 2)
+        kontrol(gmail_istemci.bosaltilanlar == ["deleteditems"],
+                f"boşaltma istemciye ulaştı ({gmail_istemci.bosaltilanlar})")
         # Silme akışı: onay (askyesno=True) → istemci.klasor_sil çağrılır
         uygulama.klasor_sil("Proje X", "Proje X")
         bekle(uygulama, 2)
@@ -322,6 +358,22 @@ def main() -> int:
         kontrol(kurum_istemci.adlandirilanlar == [("Proje X", "Kurum Klasörü")],
                 f"EWS hesapta adlandırma istemciye ulaştı "
                 f"({kurum_istemci.adlandirilanlar})")
+        # EWS çöp kutusu + spam boşaltma menüleri ve akışı
+        ogeler = menu_komutlari(
+            uygulama._klasor_menu_olustur(f"{kurum_id}|deleteditems")
+        )
+        kontrol("Çöp Kutusunu Boşalt…" in ogeler,
+                f"EWS çöp kutusunda boşaltma öğesi var ({ogeler})")
+        ogeler = menu_komutlari(
+            uygulama._klasor_menu_olustur(f"{kurum_id}|junkemail")
+        )
+        kontrol("Spam'i Temizle…" in ogeler,
+                f"EWS spam klasöründe temizleme öğesi var ({ogeler})")
+        uygulama.klasoru_bosalt("junkemail")
+        bekle(uygulama, 2)
+        kontrol(kurum_istemci.bosaltilanlar == ["junkemail"],
+                f"EWS spam temizleme istemciye ulaştı "
+                f"({kurum_istemci.bosaltilanlar})")
 
         # --- Hesaplar menüsü ---
         ogeler = []

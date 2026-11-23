@@ -3,6 +3,37 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.14] — 2026-11-23
+
+### Eklenen
+- **Sağ tuş menüsünde klasör boşaltma:** klasör ağacında **Silinmiş
+  Öğeler**'e sağ tıklayın → **"Çöp Kutusunu Boşalt…"**, **Önemsiz**
+  klasörüne sağ tıklayın → **"Spam'i Temizle…"** (yalnız aktif hesapta;
+  IMAP ve EWS). Onay penceresi sorar ("kalıcı olarak silinecek, geri
+  alınamaz"); işlem arka planda yapılır, bitince klasör listesi ve
+  sayaçlar yenilenir ve durum çubuğu silinen mesaj sayısını gösterir.
+  - **IMAP/Gmail:** klasör seçilir, tüm mesajlar `UID SEARCH ALL` ile
+    listelenir, aralık kümeleriyle (`1:5,9,11:14`, 300'lük gruplar)
+    `\Deleted` işaretlenir ve `EXPUNGE` ile gerçekten silinir.
+  - **Exchange (EWS):** `EmptyFolder` yerine SyncFolderItems +
+    toplu `DeleteItem HardDelete` (istek başına ≤100 mesaj) — kurum
+    sunucusunda çalıştığı doğrulanmış işlemler; silinen sayı sayılabilir
+    kalır ve klasörün senkron önbelleği düşürülür.
+  - İstemci düzeyinde yalnız çöp kutusu ve spam klasörüne izin verilir;
+    başka klasör okunur hata verir.
+
+### Testler
+- `tests/coklu_hesap_test.py` — IMAP `klasoru_bosalt`: `UID STORE
+  101:103 +FLAGS.SILENT (\Deleted)` + EXPUNGE, sayı 3, önbellek
+  bırakılır; gelen kutusu kısıtı; boş klasörde 0.
+- `tests/imap_yerel_sunucu_test.py` — tel denetimi: ham `UID SEARCH
+  ALL`, `UID STORE 101 +FLAGS.SILENT (\Deleted)`, `EXPUNGE`.
+- `tests/ews_klasor_test.py` — SyncFolderItems + HardDelete gövdesi
+  (iki mesaj tek istekte), sayı, senkron önbelleği düşer, kısıt.
+- `tests/hesap_ui_test.py` — menüde öğeler (IMAP + EWS, diğer
+  klasörlerde yok, başka hesapta menü yok), akış istemciye ulaşır
+  (çöp kutusu + spam).
+
 ## [0.1.13] — 2026-11-23
 
 ### Düzeltmeler

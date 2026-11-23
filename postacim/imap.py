@@ -964,6 +964,62 @@ class ImapIstemci:
         return yeni_kod
 
     @_kilitli
+    def klasoru_bosalt(self, kimlik: str) -> int:
+        """Klasördeki tüm mesajları kalıcı siler; silinen sayıyı döndürür.
+
+        Yalnız çöp kutusu ve spam klasörüne izin verilir: UID SEARCH ALL →
+        \\Deleted işaretle (300'lük kümeler) → EXPUNGE. Gmail'de bu, çöp
+        kutusunu/spam'i gerçekten boşaltır.
+        """
+        if kimlik not in ("deleteditems", "junkemail"):
+            raise EwsHata(
+                "Yalnız çöp kutusu ve spam klasörü bu yolla boşaltılabilir."
+            )
+        ad = self._klasor_adi(kimlik)
+        self._sec(ad)
+        tip, veri = self._komut("uid", "search", "ALL")
+        if tip != "OK":
+            raise EwsHata("Klasördeki mesajlar listelenemedi.")
+        uidler = [int(u) for u in (veri[0] or b"").split() if u.isdigit()]
+        if not uidler:
+            self._onbellek.pop(kimlik, None)
+            return 0
+        for kume in self._uid_kumeleri(uidler):
+            tip, _ = self._komut(
+                "uid", "store", kume, "+FLAGS.SILENT", "(\\Deleted)"
+            )
+            if tip != "OK":
+                raise EwsHata("Mesajlar silinmek üzere işaretlenemedi.")
+        tip, _ = self._komut("expunge")
+        if tip != "OK":
+            raise EwsHata("Klasör boşaltılamadı.")
+        self._onbellek.pop(kimlik, None)
+        return len(uidler)
+
+    @staticmethod
+    def _uid_kumeleri(uidler: list, boyut: int = 300) -> list:
+        """Artan UID listesini aralık kümelerine böler (1:5,9,11:14)."""
+        kumeler: list[str] = []
+        bas = onceki = None
+        sayi = 0
+        for u in uidler:
+            if bas is None:
+                bas = onceki = u
+                sayi = 1
+            elif u == onceki + 1 and sayi < boyut:
+                onceki = u
+                sayi += 1
+            else:
+                kumeler.append(
+                    str(bas) if bas == onceki else f"{bas}:{onceki}"
+                )
+                bas = onceki = u
+                sayi = 1
+        if bas is not None:
+            kumeler.append(str(bas) if bas == onceki else f"{bas}:{onceki}")
+        return kumeler
+
+    @_kilitli
     def klasor_sil(self, kimlik: str) -> None:
         """Klasörü (IMAP etiketini) siler: `DELETE <klasör>`.
 

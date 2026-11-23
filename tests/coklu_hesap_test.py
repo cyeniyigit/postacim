@@ -115,6 +115,7 @@ class SahteImap:
         self.state = "AUTH"        # imaplib durum makinesi (LOGOUT/BYE testleri)
         self.selecti_boz = False   # bir sonraki select LOGOUT hatası versin
         self.komutlar = []          # (komut, argümanlar)
+        self.expunge_sayisi = 0     # klasoru_bosalt tel denetimi
         self.uidler = [101, 102, 103]  # artan
         self.zarflar = {
             101: _zarf("Ali Veli", "ali@ornek.gov.tr", "Merhaba",
@@ -226,6 +227,7 @@ class SahteImap:
         return ("NO", [b"desteklenmiyor"])
 
     def expunge(self):
+        self.expunge_sayisi += 1
         return ("OK", [b""])
 
     def append(self, mailbox, flags, date_time, message):
@@ -556,6 +558,28 @@ def imap_test():
         istemci.mesaj_detay(mesaj)
         kontrol(len(istemci._detay_imap.komutlar) == onceki,
                 "ikinci mesaj_detay önbellekten okundu")
+
+        # --- Klasörü boşalt (çöp kutusu / spam) ---
+        sayi = istemci.klasoru_bosalt("deleteditems")
+        kontrol(sayi == 3, f"3 mesaj silindi ({sayi})")
+        kontrol(
+            ("store", ("101:103", "+FLAGS.SILENT", "(\\Deleted)"))
+            in istemci.imap.komutlar,
+            "UID STORE aralık kümesiyle işaretledi (101:103)",
+        )
+        kontrol(istemci.imap.expunge_sayisi >= 1,
+                "EXPUNGE gönderildi (Gmail'de gerçek silme)")
+        kontrol("deleteditems" not in istemci._onbellek,
+                "boşaltılan klasörün önbelleği bırakıldı")
+        try:
+            istemci.klasoru_bosalt("inbox")
+            kontrol(False, "gelen kutusu bu yolla boşaltılmamalı")
+        except EwsHata as exc:
+            kontrol("boşaltılabilir" in str(exc),
+                    f"klasör kısıtı ({exc})")
+        istemci.imap.uidler = []
+        sayi = istemci.klasoru_bosalt("junkemail")
+        kontrol(sayi == 0, f"boş klasörde 0 döner ({sayi})")
 
 
 def smtp_test():

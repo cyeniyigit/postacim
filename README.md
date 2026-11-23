@@ -298,6 +298,12 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
 - **Sağ tuş menüsü** (mesaj listesinde, Outlook tarzı): Yanıtla, Yanıtla
   Herkese, İlet, Okundu/Okunmadı, **Taşı → klasör listesi**, Sil, Kopyala,
   **Farklı Kaydet (.eml)**, Bilgiler, Yenile
+- **Çöp kutusunu boşalt / spam temizle (sağ tuş):** klasör ağacında
+  **Silinmiş Öğeler**'e sağ tıklayın → **"Çöp Kutusunu Boşalt…"**,
+  **Önemsiz** klasörüne sağ tıklayın → **"Spam'i Temizle…"** (yalnız aktif
+  hesapta). Onay sorulur; işlem arka planda yapılır, silinen mesaj sayısı
+  durum çubuğunda gösterilir ve klasör sayaçları yenilenir. Silinen
+  mesajlar kalıcıdır (geri alınamaz).
 - **Klasör oluşturma (sağ tuş):** klasör ağacında hesap ya da herhangi bir
   klasöre sağ tıklayın → **"Yeni Klasör…"** (yalnız aktif hesapta; IMAP ve
   EWS). Ad penceresi açılır (Enter = Oluştur, Esc = İptal); boş ad uyarı

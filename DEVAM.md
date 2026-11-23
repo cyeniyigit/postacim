@@ -1263,3 +1263,48 @@ kırılma oldu. İstersen kendin test ederek hatayı izleyebilirsin."
 - `resim_test.py → test_html_tablolar_onar`: sarma/açılış/kapanış,
   art arda çocuklar, hücre içi dokunulmazlık, tbody altı, kapanmamış
   tablo, gösterim entegrasyonu.
+
+## Çöp kutusunu boşalt + spam temizle (sağ tuş) (2026-11-23)
+
+**Talep:** "çöp kutusunu boşaltma ve spam mesajları silme sağ tuş
+menüsünü ilave edelim."
+
+### Değişiklikler
+- **`imap.py → klasoru_bosalt(kimlik)`** (yedekli): yalnız
+  `deleteditems`/`junkemail`'e izin (okunur `EwsHata`). `UID SEARCH ALL`
+  → `_uid_kumeleri` (aralık kümeleri `1:5,9`, ≤300/istek) →
+  `UID STORE +FLAGS.SILENT (\Deleted)` → `EXPUNGE`. Gmail'de çöp
+  kutusu/spam'i gerçekten boşaltır. `_onbellek[kimlik]` düşürülür; sayı
+  döner (boş klasörde 0).
+- **`ews.py → klasoru_bosalt(kimlik)`**: yine yalnız iki klasör.
+  `EmptyFolder` yerine `SyncFolderItems` (IdOnly, 512/tur) + toplu
+  `DeleteItem HardDelete` (≤100/istek) — kurum sunucusunda
+  **doğrulanmış** işlemler (FindItem bozuk ama Sync/Delete çalışıyor);
+  sayı sayılabilir kalır, `_senkronizasyon.pop` ile klasör yeniden
+  senkronize edilir. Dikkat: yanıt öğeleri `.//m:Changes//t:ItemId`
+  altından okunur (SyncFolderItems yanıtı `m:Items` içermiyor).
+- **`ui.py`:**
+  - `_klasor_menu_olustur`: "Yeni Klasör…" altına, **Silinmiş Öğeler**
+    düğümünde "Çöp Kutusunu Boşalt…", **Önemsiz** düğümünde "Spam'i
+    Temizle…" (yalnız aktif hesap; IMAP + EWS; ayırıcı ile).
+  - `klasoru_bosalt(kimlik)`: `askyesno` onayı ("kalıcı, geri alınamaz")
+    → `_arka_plan` → `("yenile", "Çöp kutusu boşaltıldı (N mesaj)")`.
+
+### Testler (hepsi geçti)
+- `coklu_hesap_test.py`: SahteImap'a `expunge_sayisi` eklendi; store
+  kümesi `101:103` aralığıyla, EXPUNGE sayacı, sayı=3, önbellek düşer,
+  gelen kutusu kısıtı, boş klasör → 0
+- `imap_yerel_sunucu_test.py`: tel — `UID SEARCH ALL`,
+  `UID STORE 101 +FLAGS.SILENT (\Deleted)`, `EXPUNGE`
+- `ews_klasor_test.py`: `sync_yaniti`/`deleteitem_yaniti` eklendi;
+  HardDelete gövdesi iki ItemId, sayı, önbellek pop, kısıt
+- `hesap_ui_test.py`: menü öğeleri (IMAP çöp/spam, EWS çöp/spam; inbox'ta
+  ve diğer klasörlerde yok; başka hesabın çöp kutusunda menü yok), akış
+  hem IMAP hem EWS istemcisine ulaşır
+
+### Not / risk
+- Gmail IMAP'te EXPUNGE çöp kutusunda mesajları kalıcı siler; 30 günlük
+  otomatik temizliğe ekstra bir yol olur. Kurum EWS'te HardDelete geri
+  alınamaz — onay diyalogu zorunlu.
+- Çok büyük klasörlerde (binlerce mesaj) süre uzun olabilir; durum
+  çubuğu iş sürerken "boşaltılıyor…" gösterir.

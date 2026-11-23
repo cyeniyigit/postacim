@@ -1523,6 +1523,66 @@ class EwsIstemci:
         self._ozel_klasor_onbellek = None
         return kimlik
 
+    def klasoru_bosalt(self, kimlik: str) -> int:
+        """Klasördeki tüm mesajları kalıcı siler; silinen sayıyı döndürür.
+
+        Yalnız çöp kutusu ve spam klasörüne izin verilir. `EmptyFolder`
+        yerine SyncFolderItems + toplu `DeleteItem HardDelete` kullanılır:
+        kurum sunucusunda SyncFolderItems/DeleteItem çalıştığı doğrulanmış
+        işlemlerdir ve silinen mesaj sayısı sayılabilir kalır.
+        """
+        if kimlik not in ("deleteditems", "junkemail"):
+            raise EwsHata(
+                "Yalnız çöp kutusu ve spam klasörü bu yolla boşaltılabilir."
+            )
+        silinen = 0
+        durum = ""
+        deneme = 0
+        while deneme < 400:  # güvenlik üst sınırı: sonsuz döngüye girme
+            deneme += 1
+            govde = (
+                "<m:SyncFolderItems>"
+                '<m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>'
+                f"<m:SyncFolderId>{_klasor_id_xml(kimlik)}</m:SyncFolderId>"
+                f"<m:SyncState>{durum}</m:SyncState>"
+                "<m:MaxChangesReturned>512</m:MaxChangesReturned>"
+                "</m:SyncFolderItems>"
+            )
+            kok = self.istek(govde)
+            durum_el = kok.find(".//m:SyncState", NS)
+            if durum_el is not None and durum_el.text:
+                durum = durum_el.text
+            kimlikler = [
+                el.get("Id")
+                for el in kok.findall(".//m:Changes//t:ItemId", NS)
+                if el.get("Id")
+            ]
+            if kimlikler:
+                silinen += self._kalici_sil_coklu(kimlikler)
+            son = kok.find(".//m:IncludesLastItemInRange", NS)
+            if son is not None and (son.text or "").lower() == "true":
+                break
+        # Klasör artık boş: senkron önbelleği düşür (ilk açılışta baştan)
+        self._senkronizasyon.pop(kimlik, None)
+        return silinen
+
+    def _kalici_sil_coklu(self, kimlikler: list) -> int:
+        """Mesajları HardDelete ile topluca siler (istek başına ≤100)."""
+        silinen = 0
+        for bas in range(0, len(kimlikler), 100):
+            grup = kimlikler[bas : bas + 100]
+            ids = "".join(
+                f'<t:ItemId Id="{_kacis(i)}"/>' for i in grup
+            )
+            govde = (
+                '<m:DeleteItem DeleteType="HardDelete">'
+                f"<m:ItemIds>{ids}</m:ItemIds>"
+                "</m:DeleteItem>"
+            )
+            self.istek(govde)
+            silinen += len(grup)
+        return silinen
+
     def kalici_sil(self, mesaj: Mesaj) -> None:
         govde = (
             "<m:DeleteItem DeleteType=\"HardDelete\">"

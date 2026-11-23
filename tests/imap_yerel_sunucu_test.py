@@ -171,6 +171,8 @@ def main() -> int:
             istemci.klasor_olustur("Yeni Klasör")
             # Yeniden adlandırma: RENAME "Proje X" "Proje 2"
             istemci.klasor_yeniden_adlandir("Proje X", "Proje 2")
+            # Klasörü boşalt: UID SEARCH ALL + STORE \Deleted + EXPUNGE
+            istemci.klasoru_bosalt("deleteditems")
         finally:
             try:
                 istemci.imap.shutdown()
@@ -190,6 +192,15 @@ def main() -> int:
 
     kontrol(any('RENAME "Proje X" "Proje 2"' in k for k in komutlar),
             'ham RENAME komutu: RENAME "Proje X" "Proje 2"')
+
+    kontrol(any("UID SEARCH ALL" in k for k in komutlar),
+            "ham klasörü boşalt araması: UID SEARCH ALL")
+    kontrol(any("UID STORE 101 +FLAGS.SILENT (\\Deleted)" in k
+                for k in komutlar),
+            "ham STORE: UID STORE … +FLAGS.SILENT (\\Deleted)")
+    kontrol(any(" EXPUNGE" in f" {k}" and "UID" not in k.split("EXPUNGE")[0][-4:]
+                for k in komutlar),
+            "ham EXPUNGE gönderildi")
 
     kontrol(any(k.endswith('LIST "" *') for k in komutlar),
             'ham LIST komutu `LIST "" *` (tırnaklı boş dizin)')

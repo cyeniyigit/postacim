@@ -108,6 +108,27 @@ def updatefolder_yaniti(kimlik: str) -> str:
     )
 
 
+def sync_yaniti(kimlikler: list, son: bool = True) -> str:
+    """SyncFolderItems yanıtı: IdOnly öğeler + SyncState + son bayrağı."""
+    degisikler = "".join(
+        f"<m:Create><t:Message><t:ItemId Id=\"{k}\"/></t:Message></m:Create>"
+        for k in kimlikler
+    )
+    return zarf(
+        f"<m:SyncState>S-{len(kimlikler)}</m:SyncState>"
+        f"<m:IncludesLastItemInRange>{'true' if son else 'false'}</m:IncludesLastItemInRange>"
+        f"<m:Changes>{degisikler}</m:Changes>"
+    )
+
+
+def deleteitem_yaniti() -> str:
+    return zarf(
+        "<m:DeleteItemResponseMessage ResponseClass=\"Success\">"
+        "<m:ResponseCode>NoError</m:ResponseCode>"
+        "</m:DeleteItemResponseMessage>"
+    )
+
+
 def main() -> int:
     print("== ews: klasör oluşturma + kullanıcı klasörleri ==")
     istemci = ews_mod.EwsIstemci(
@@ -135,6 +156,14 @@ def main() -> int:
             return ET.fromstring(createfolder_yaniti("ID-NOTLAR"))
         if "UpdateFolder" in govde:
             return ET.fromstring(updatefolder_yaniti("ID-PROJE"))
+        if "DeleteItem" in govde:
+            return ET.fromstring(deleteitem_yaniti())
+        if "SyncFolderItems" in govde:
+            # İlk tur 2 mesaj + son; ikinci tur boş + son (güvenlik turu yok)
+            return ET.fromstring(
+                sync_yaniti(["ID-M1", "ID-M2"]) if "<m:SyncState></m:SyncState>" in govde
+                else sync_yaniti([], son=True)
+            )
         if "FindFolder" in govde:
             return ET.fromstring(findfolder_yaniti())
         if "GetFolder" in govde and '<t:FolderId Id="ID-PROJE"' in govde:
@@ -216,6 +245,27 @@ def main() -> int:
         kontrol(False, "boş yeni ad hata fırlatmalı")
     except ews_mod.EwsHata as exc:
         kontrol("boş" in str(exc), f"boş ad reddedildi ({exc})")
+
+    # --- klasoru_bosalt: SyncFolderItems + toplu HardDelete ---
+    istemci._senkronizasyon["deleteditems"] = {"durum": "eski", "mesajlar": {}}
+    istekler.clear()
+    sayi = istemci.klasoru_bosalt("deleteditems")
+    kontrol(sayi == 2, f"2 mesaj silindi ({sayi})")
+    delete_govde = next(
+        (g for g in istekler if "DeleteItem" in g), ""
+    )
+    kontrol('DeleteType="HardDelete"' in delete_govde,
+            "DeleteItem HardDelete")
+    kontrol('<t:ItemId Id="ID-M1"/>' in delete_govde
+            and '<t:ItemId Id="ID-M2"/>' in delete_govde,
+            "iki mesaj tek istekte silindi")
+    kontrol("deleteditems" not in istemci._senkronizasyon,
+            "boşaltılan klasörün senkron önbelleği bırakıldı")
+    try:
+        istemci.klasoru_bosalt("inbox")
+        kontrol(False, "gelen kutusu bu yolla boşaltılmamalı")
+    except ews_mod.EwsHata as exc:
+        kontrol("boşaltılabilir" in str(exc), f"klasör kısıtı ({exc})")
 
     # --- FindFolder hatası: liste yine de dönülür ---
     istemci._ozel_klasor_onbellek = None

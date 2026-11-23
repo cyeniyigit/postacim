@@ -3915,6 +3915,8 @@ class Postacim(tk.Tk):
 
         **"Yeni Klasör…"** yalnız **aktif hesapta** görünür (IMAP ve EWS);
         kökte (hesap düğümünde) ya da herhangi bir klasörde açılabilir.
+        **"Çöp Kutusunu Boşalt…"** ve **"Spam'i Temizle…"** yalnız aktif
+        hesabın ilgili klasöründe görünür (onay sorulur).
         **"Yeniden Adlandır…"** aktif hesapta, özel olmayan klasörlerde
         (IMAP etiketleri ve EWS kullanıcı klasörleri) görünür.
         "Klasörü Sil…" ise yalnız aktif IMAP hesabında ve özel olmayan
@@ -3936,6 +3938,20 @@ class Postacim(tk.Tk):
                 label="Yeni Klasör…", image=self.ikon.get("klasor_ekle"),
                 compound="left", command=self.klasor_olustur,
             )
+            if kimlik in ("deleteditems", "junkemail"):
+                menu.add_separator()
+                if kimlik == "deleteditems":
+                    menu.add_command(
+                        label="Çöp Kutusunu Boşalt…", image=self.ikon["sil"],
+                        compound="left",
+                        command=lambda: self.klasoru_bosalt("deleteditems"),
+                    )
+                else:
+                    menu.add_command(
+                        label="Spam'i Temizle…", image=self.ikon["sil"],
+                        compound="left",
+                        command=lambda: self.klasoru_bosalt("junkemail"),
+                    )
             if kimlik and kimlik not in SIRA and kimlik not in KLASORLER:
                 menu.add_separator()
                 ad = next(
@@ -4041,6 +4057,41 @@ class Postacim(tk.Tk):
         self.istemci.klasor_yeniden_adlandir(kimlik, yeni)
         # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
         return ("yenile", f"Klasör adı değişti: {yeni}")
+
+    def klasoru_bosalt(self, kimlik: str):
+        """Çöp kutusunu / spam klasörünü boşaltır (sağ tuş → onay → arka plan)."""
+        if kimlik == "deleteditems":
+            baslik, ad, mesaj = (
+                "Çöp Kutusunu Boşalt", "çöp kutusu", "Çöp kutusu boşaltıldı"
+            )
+        elif kimlik == "junkemail":
+            baslik, ad, mesaj = (
+                "Spam'i Temizle", "spam klasörü", "Spam temizlendi"
+            )
+        else:
+            return
+        if not messagebox.askyesno(
+            baslik,
+            f"{ad} tamamen boşaltılacak; içindeki tüm mesajlar kalıcı "
+            "olarak silinecek (geri alınamaz). Devam edilsin mi?",
+        ):
+            return
+        self.durum.set(f"{ad} boşaltılıyor…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._klasoru_bosalt_cek, kimlik),
+            daemon=True,
+        ).start()
+
+    def _klasoru_bosalt_cek(self, kimlik: str):
+        sayi = self.istemci.klasoru_bosalt(kimlik)
+        mesaj = (
+            "Çöp kutusu boşaltıldı" if kimlik == "deleteditems"
+            else "Spam temizlendi"
+        )
+        if sayi:
+            mesaj += f" ({sayi} mesaj)"
+        # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
+        return ("yenile", mesaj)
 
     def _klasor_adi_penceresi(
         self, ilk: str | None = None, baslik: str = "Yeni Klasör",
