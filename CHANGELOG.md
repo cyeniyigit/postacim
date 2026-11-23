@@ -3,6 +3,29 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.13] — 2026-11-23
+
+### Düzeltmeler
+- **Gmail aramasında mail seçince uygulama çöküyordu (segfault) — kök
+  neden çözüldü.** "Hepsi" aramasının ilk sonucu (bozuk HTML'li
+  tanıtım e-postası) görüntülenirken Tkhtml3 yerli bileşeni çöküyordu.
+  Canlı izleme ve kademeli sadeleştirme (bisection) ile tetikleyici
+  bulundu: **`<table>` çocuğu doğrudan başka bir `<table>` olan bozuk
+  HTML** (`<table><table>…</table></table>`, arada `<tr><td>` yok).
+  Tarayıcılar bunu sessizce sarar; Tkhtml3 herhangi bir içerikte, boş
+  tabloda bile segfault üretir.
+  - Çözüm: `govde_html_gosterim` artık `html_tablolar_onar` ile her
+    çıplak çocuğu tarayıcı kuralının aynısı olan
+    `<table><tr><td><table>…</table></td></tr></table>` biçimine sarar.
+  - Canlı doğrulama: aynı e-posta, aynı adım (arama → ilk mail seçimi)
+    artık çökmüyor; düzenlenmiş HTML sadeleştirilmiş ortamda sorunsuz
+    render ediliyor.
+
+### Testler
+- `tests/resim_test.py` — `html_tablolar_onar`: çıplak çocuk sarma,
+  art arda çocuklar, hücre içi tablolara dokunmama, tbody altı,
+  kapanmamış tablo, `govde_html_gosterim` entegrasyonu.
+
 ## [0.1.12] — 2026-11-23
 
 ### Düzeltmeler

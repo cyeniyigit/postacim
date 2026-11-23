@@ -28,6 +28,7 @@ from postacim.ews import (  # noqa: E402
     govde_html_gosterim,
     html_metni,
     html_taglari_kapat,
+    html_tablolar_onar,
     resim_verisi,
 )
 
@@ -298,6 +299,68 @@ def test_html_taglari_kapat():
     kontrol(
         h.count("<tbody>") == h.count("</tbody>"),
         "govde_html_gosterim kapanışı uygular",
+    )
+
+
+def test_html_tablolar_onar():
+    """Tkhtml segfault önlemi: `<table>` çocuğu doğrudan `<table>`.
+
+    Hepsiburada tipi bozuk e-posta: tablo, arada <tr><td> olmadan iç
+    içe gelir; Tkhtml3 (C) bu yapıda segfault üretir. Tarayıcı kuralı
+    uygulanır: çıplak çocuk `<tr><td>…</td></tr>` içine sarılır.
+    """
+    print("\n— html_tablolar_onar —")
+    bozuk = (
+        '<table style="margin-top: 2em;"><table'
+        ' style="background-color:#fce7f5;border-radius:8px;">'
+        "<tr><td>icerik</td></tr></table></table>"
+    )
+    duz = html_tablolar_onar(bozuk)
+    kontrol(
+        duz.count("<tr>") == duz.count("</tr>")
+        and duz.count("<td") == duz.count("</td>"),
+        f"çıplak çocuk sarıldı ({duz})",
+    )
+    kontrol(
+        "style=\"margin-top: 2em;\"><tr><td><table" in duz,
+        "sarma açılış etiketin hemen ardında",
+    )
+    kontrol(
+        "</table></td></tr></table>" in duz,
+        "sarma kapanışı çocuk tablonun kapanışından sonra",
+    )
+    # Art arda çıplak çocuklar
+    coklu = "<table><table><tr><td>a</td></tr></table><table><tr><td>b</td></tr></table></table>"
+    duz = html_tablolar_onar(coklu)
+    kontrol(
+        duz.count("<tr><td><table") == 2
+        and duz.count("</table></td></tr>") == 2,
+        f"her çıplak çocuk ayrıca sarılır ({duz})",
+    )
+    # Sağlam yapı değişmez
+    saglam = (
+        "<table><tr><td>"
+        "<table><tr><td>normal iç içe</td></tr></table>"
+        "</td></tr></table>"
+    )
+    kontrol(html_tablolar_onar(saglam) == saglam, "hücre içi tablo dokunulmaz")
+    # tbody aracılığıyla açılmış çıplak çocuk da sarılır
+    tbody = "<table><tbody><table><tr><td>x</td></tr></table></tbody></table>"
+    duz = html_tablolar_onar(tbody)
+    kontrol("<tbody><tr><td><table" in duz, "tbody altındaki çıplak çocuk sarılır")
+    # Kapanmamış tablo: dosya sonunda sarmalama unutulmaz
+    acik = "<table><table><tr><td>x</td></tr>"
+    duz = html_tablolar_onar(acik)
+    kontrol(
+        duz.count("<table") == duz.count("</table")
+        and "</td></tr>" in duz,
+        f"kapanmamış tablonun sarmalaması kapatılır ({duz})",
+    )
+    # Gösterim üretimi onarımı uygular
+    h = govde_html_gosterim(Mesaj(govde_html=bozuk, resimler=[]))
+    kontrol(
+        'style="margin-top: 2em;"><tr><td><table' in h,
+        "govde_html_gosterim onarımı uygular",
     )
 
 
@@ -577,6 +640,7 @@ def main() -> int:
     test_cozumleme()
     test_html_gosterim()
     test_html_taglari_kapat()
+    test_html_tablolar_onar()
     test_ews_mesaj_detay()
     test_imap_mesaj_detay()
     test_arayuz()

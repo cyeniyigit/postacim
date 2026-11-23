@@ -1212,3 +1212,54 @@ bağlanmaydı.
 - Daha büyük kazanç (ekteki mesajlarda gövdeyi kısmi çekmek: BODYSTRUCTURE
   + parça bazlı FETCH) ayrı bir iş olarak değerlendirilebilir — henüz
   yapılmadı.
+
+## Gmail "Hepsi" aramasında mail seçimi → segfault (2026-11-23)
+
+**Rapor:** "Gmail'de Hepsi filtresinde daha ilk maili seçtiğim gibi
+kırılma oldu. İstersen kendin test ederek hatayı izleyebilirsin."
+
+### İzleme (canlı, kullanıcı onayıyla)
+- `hata.log` boştu → çöken oturum eski sürümdeydi. **0.1.13 için canlı
+  yeniden üretim yapıldı** (başlık altında gerçek hesap, SALT OKUMA:
+  arama "Hepsi" → ilk mail seçimi): `exit=139 Segmentation fault` —
+  birebir tekrarlandı. Tk geri çağrı kaydı (hata.log) segfault'u
+  yakalayamaz; yerli bileşen çöküyor.
+- Metin modunda aynı akım **çökmedi** → sorun HTML gösterim yolu
+  (`tkinterweb`/Tkhtml3).
+- İzole döngü: UI'ın yüklediği dönüştürülmüş HTML dosyaya alındı; tek
+  başına `HtmlFrame.load_html(...)` → segfault.
+  (**Not:** ara betik `bisect.py` adıyla kaydedilmişti; stdlib `bisect`
+  modülünü gölgelendirdiği için `tkinterweb` zinciri onu içe aktarıp
+  betiği çalıştırdı — "asılı" görünen denemeler bu yüzdendi. Dosya
+  adlandırırken stdlib gölgelenmemeli!)
+- Kademeli sadeleştirme (her deneme ayrı Xvfb sürecinde):
+  - yer tutucu linkler / <a> / <style> kaldırımı → hâlâ çöküyor
+  - **tablolar kaldırılınca → çökme yok**
+  - tablo bazlı bisection: tablo4 (1419 bayt) kaldırılınca düzeliyor
+  - iskelet testi: tablolar 0-4'ün yalnız **açılış etiketleri** bile
+    çökertiyor → içerik değil, yapı
+  - **minimal tetikleyici:** `<table><table></table></table>` — boş
+    tabloda bile segfault. (`<table><td>` içine sarılı normal iç içe
+    tablo sorun değil; sorun çocuğun **hücresiz bölgede** açılması.)
+
+### Değişiklikler (`ews.py`)
+- **`html_tablolar_onar(html)`**: tablo ailesi etiketlerinde durum
+  makinesi; `hucre=False` (hücresiz) bölgede açılan her çocuk `<table>`
+  `<tr><td>…</td></tr>` içine sarılır (tarayıcı kuralı). `</table>`
+  kapanışında sarmalama `</td></tr>` ile kapatılır; dosya sonunda açık
+  tabloların sarmalamaları da kapatılır. Art arda çıplak çocuklar tek tek
+  sarılır; hücre içi normal iç içe tablola **dokunulmaz**.
+- `govde_html_gosterim`: `html_taglari_kapat` sonrası onarım çağrısı.
+
+### Doğrulama
+- Düzenlenmiş HTML izole Tkhtml ortamında sorunsuz (60 döngü render).
+- **Canlı uçtan uca:** gerçek hesap + "Hepsi" araması + ilk mail seçimi →
+  exit=0, 0 istisna.
+- Metin modundaki `unknown option "-state"` hatası test artefaktı
+  çıktı (bayrak kurulumdan sonra zorlanınca widget türü uyuşmuyor;
+  gerçekte html_modu sabit) — kod değişikliği gerekmedi.
+
+### Testler (hepsi geçti)
+- `resim_test.py → test_html_tablolar_onar`: sarma/açılış/kapanış,
+  art arda çocuklar, hücre içi dokunulmazlık, tbody altı, kapanmamış
+  tablo, gösterim entegrasyonu.

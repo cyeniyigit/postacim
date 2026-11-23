@@ -1842,6 +1842,73 @@ def html_taglari_kapat(html: str) -> str:
     return "".join(parcalar)
 
 
+_TABLO_ETIKET_DUZEN = re.compile(
+    r"<(/?)(table|tbody|thead|tfoot|tr|td|th)\b[^>]*>", re.I
+)
+
+
+def html_tablolar_onar(html: str) -> str:
+    """`<table>` çocuğu doğrudan `<table>` olan yapıları onarır.
+
+    Kötü biçimli e-posta HTML'inde tablo, arada `<tr><td>` olmadan iç içe
+    gelir: `<table><table>…</table></table>`. Tarayıcılar bunu sessizce
+    sarar; **Tkhtml3 (C) yerli bileşeninde segfault üretir** (herhangi bir
+    içerikte, boş tabloda bile). Bu geçiş her çıplak çocuğu
+    `<table><tr><td><table>…</table></td></tr></table>` biçimine sarar;
+    tarayıcıların uyguladığı kuralın aynısıdır.
+    """
+    yigin: list[dict] = []  # yalnız tablo çerçeveleri
+    parcalar: list[str] = []
+    son = 0
+    for eslesme in _TABLO_ETIKET_DUZEN.finditer(html):
+        parcalar.append(html[son:eslesme.start()])
+        son = eslesme.end()
+        kapanis = eslesme.group(1) == "/"
+        ad = eslesme.group(2).lower()
+        if not kapanis:
+            if ad == "table":
+                ust = yigin[-1] if yigin else None
+                sardi = ust is not None and not ust["hucre"]
+                if sardi:
+                    # Hücresiz bölgede açılan çocuk tablo: sar
+                    parcalar.append("<tr><td>")
+                    ust["hucre"] = True
+                yigin.append({"hucre": False, "sardi": sardi})
+            elif ad in ("td", "th"):
+                if yigin:
+                    yigin[-1]["hucre"] = True
+            elif ad == "tr":
+                if yigin:
+                    yigin[-1]["hucre"] = False  # yeni satır, hücre açılmadı
+            parcalar.append(eslesme.group(0))
+        else:
+            if ad == "table" and yigin:
+                ust = yigin.pop()
+                parcalar.append(eslesme.group(0))
+                if ust["sardi"]:
+                    parcalar.append("</td></tr>")
+                    if yigin:
+                        yigin[-1]["hucre"] = False
+                continue
+            if ad == "tr" and yigin:
+                yigin[-1]["hucre"] = False
+            elif ad == "td" and yigin:
+                yigin[-1]["hucre"] = False  # hücre kapandı
+            parcalar.append(eslesme.group(0))
+    parcalar.append(html[son:])
+    if yigin:
+        # Dosya sonu: açık tablolar kapatılırken sarmalama unutulmasın
+        kapanislar = []
+        while yigin:
+            ust = yigin.pop()
+            if ust["sardi"]:
+                kapanislar.append("</table></td></tr>")
+            else:
+                kapanislar.append("</table>")
+        parcalar.append("".join(kapanislar))
+    return "".join(parcalar)
+
+
 def govde_html_gosterim(mesaj: Mesaj, gecen: dict | None = None) -> str:
     """Gövdeyi HTML gösterimi için hazırlar (tkinterweb/Tkhtml3).
 
@@ -1877,4 +1944,6 @@ def govde_html_gosterim(mesaj: Mesaj, gecen: dict | None = None) -> str:
     govde = re.sub(r"(?is)<meta\b[^>]*http-equiv[^>]*>", " ", govde)
     # Kapanmamış tablo/tbody + sonradan gelen tablo Tkhtml'i çökertir.
     govde = html_taglari_kapat(govde)
+    # `<table><table>` (hücresiz iç içe tablo) da Tkhtml'i çökertir.
+    govde = html_tablolar_onar(govde)
     return _GOSTERIM_STILI + govde
