@@ -1552,13 +1552,13 @@ class EwsIstemci:
             durum_el = kok.find(".//m:SyncState", NS)
             if durum_el is not None and durum_el.text:
                 durum = durum_el.text
-            kimlikler = [
-                el.get("Id")
+            ogeler = [
+                (el.get("Id"), el.get("ChangeKey") or "")
                 for el in kok.findall(".//m:Changes//t:ItemId", NS)
                 if el.get("Id")
             ]
-            if kimlikler:
-                silinen += self._kalici_sil_coklu(kimlikler)
+            if ogeler:
+                silinen += self._kalici_sil_coklu(ogeler)
             son = kok.find(".//m:IncludesLastItemInRange", NS)
             if son is not None and (son.text or "").lower() == "true":
                 break
@@ -1566,22 +1566,56 @@ class EwsIstemci:
         self._senkronizasyon.pop(kimlik, None)
         return silinen
 
-    def _kalici_sil_coklu(self, kimlikler: list) -> int:
-        """Mesajları HardDelete ile topluca siler (istek başına ≤100)."""
+    def _kalici_sil_coklu(self, ogeler: list) -> int:
+        """Mesajları HardDelete ile topluca siler (istek başına ≤100).
+
+        Toplu istek `ErrorItemNotFound` verirse (öğeler senkron ile
+        silme arasında kaybolmuş olabilir) tek tek denenir; artık
+        bulunmayan öğeler atlanır, diğer hatalar yükselir.
+        """
         silinen = 0
-        for bas in range(0, len(kimlikler), 100):
-            grup = kimlikler[bas : bas + 100]
-            ids = "".join(
-                f'<t:ItemId Id="{_kacis(i)}"/>' for i in grup
+        bulunamayan = 0
+        for bas in range(0, len(ogeler), 100):
+            grup = ogeler[bas : bas + 100]
+            try:
+                self.istek(self._kalici_sil_govdesi(grup))
+                silinen += len(grup)
+                continue
+            except EwsHata as exc:
+                if "ErrorItemNotFound" not in str(exc):
+                    raise
+            # Yolu A: bazı öğeler yok — tek tek dene, yokları atla
+            for oge in grup:
+                try:
+                    self.istek(self._kalici_sil_govdesi([oge]))
+                    silinen += 1
+                except EwsHata as tek:
+                    if "ErrorItemNotFound" in str(tek):
+                        bulunamayan += 1
+                    else:
+                        raise
+        if silinen == 0 and bulunamayan:
+            raise EwsHata(
+                f"Mesajlar silinemedi: {bulunamayan} öğe sunucuda "
+                "bulunamadı (ErrorItemNotFound)."
             )
-            govde = (
-                '<m:DeleteItem DeleteType="HardDelete">'
-                f"<m:ItemIds>{ids}</m:ItemIds>"
-                "</m:DeleteItem>"
-            )
-            self.istek(govde)
-            silinen += len(grup)
         return silinen
+
+    @staticmethod
+    def _kalici_sil_govdesi(ogeler: list) -> str:
+        """HardDelete istek gövdesi (Id + ChangeKey)."""
+        ids = "".join(
+            (
+                f'<t:ItemId Id="{_kacis(i)}" ChangeKey="{_kacis(k)}"/>'
+                if k else f'<t:ItemId Id="{_kacis(i)}"/>'
+            )
+            for i, k in ogeler
+        )
+        return (
+            '<m:DeleteItem DeleteType="HardDelete">'
+            f"<m:ItemIds>{ids}</m:ItemIds>"
+            "</m:DeleteItem>"
+        )
 
     def kalici_sil(self, mesaj: Mesaj) -> None:
         govde = (

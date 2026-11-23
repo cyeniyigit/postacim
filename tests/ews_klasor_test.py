@@ -111,7 +111,8 @@ def updatefolder_yaniti(kimlik: str) -> str:
 def sync_yaniti(kimlikler: list, son: bool = True) -> str:
     """SyncFolderItems yanıtı: IdOnly öğeler + SyncState + son bayrağı."""
     degisikler = "".join(
-        f"<m:Create><t:Message><t:ItemId Id=\"{k}\"/></t:Message></m:Create>"
+        f'<m:Create><t:Message><t:ItemId Id="{k}" ChangeKey="CK-{k}"/>'
+        "</t:Message></m:Create>"
         for k in kimlikler
     )
     return zarf(
@@ -125,6 +126,14 @@ def deleteitem_yaniti() -> str:
     return zarf(
         "<m:DeleteItemResponseMessage ResponseClass=\"Success\">"
         "<m:ResponseCode>NoError</m:ResponseCode>"
+        "</m:DeleteItemResponseMessage>"
+    )
+
+
+def hata_yaniti(kod: str) -> str:
+    return zarf(
+        "<m:DeleteItemResponseMessage ResponseClass=\"Error\">"
+        f"<m:ResponseCode>{kod}</m:ResponseCode>"
         "</m:DeleteItemResponseMessage>"
     )
 
@@ -256,9 +265,9 @@ def main() -> int:
     )
     kontrol('DeleteType="HardDelete"' in delete_govde,
             "DeleteItem HardDelete")
-    kontrol('<t:ItemId Id="ID-M1"/>' in delete_govde
-            and '<t:ItemId Id="ID-M2"/>' in delete_govde,
-            "iki mesaj tek istekte silindi")
+    kontrol('<t:ItemId Id="ID-M1" ChangeKey="CK-ID-M1"/>' in delete_govde
+            and '<t:ItemId Id="ID-M2" ChangeKey="CK-ID-M2"/>' in delete_govde,
+            "iki mesaj tek istekte silindi (Id + ChangeKey)")
     kontrol("deleteditems" not in istemci._senkronizasyon,
             "boşaltılan klasörün senkron önbelleği bırakıldı")
     try:
@@ -266,6 +275,57 @@ def main() -> int:
         kontrol(False, "gelen kutusu bu yolla boşaltılmamalı")
     except ews_mod.EwsHata as exc:
         kontrol("boşaltılabilir" in str(exc), f"klasör kısıtı ({exc})")
+
+    # --- Toplu silme ErrorItemNotFound → tek tek dene, yokları atla ---
+    istemci._senkronizasyon["junkemail"] = {"durum": "eski", "mesajlar": {}}
+    eski_istek = istemci.istek
+
+    def topu_tutan_istek(govde: str, tekrar: int = 3):
+        istekler.append(govde)
+        if "CreateFolder" in govde:
+            return ET.fromstring(createfolder_yaniti("ID-NOTLAR"))
+        if "SyncFolderItems" in govde:
+            if "<m:SyncState></m:SyncState>" in govde:
+                return ET.fromstring(
+                    sync_yaniti(["ID-X1", "ID-X2", "ID-X3"])
+                )
+            return ET.fromstring(sync_yaniti([]))
+        if "DeleteItem" in govde:
+            if govde.count("<t:ItemId ") > 1:
+                # Toplu istek: ilk öğe yok (kurum davranışı). Gerçek istek
+                # ResponseCode != NoError'da EwsHata yükseltir.
+                raise ews_mod.EwsHata("EWS yanıt kodu: ErrorItemNotFound")
+            if '<t:ItemId Id="ID-X1"' in govde \
+                    or '<t:ItemId Id="ID-X3"' in govde:
+                return ET.fromstring(deleteitem_yaniti())
+            raise ews_mod.EwsHata("EWS yanıt kodu: ErrorItemNotFound")
+        return ET.fromstring(getfolder_yaniti())
+
+    istemci.istek = topu_tutan_istek
+    istekler.clear()
+    try:
+        sayi = istemci.klasoru_bosalt("junkemail")
+        kontrol(sayi == 2,
+                f"bulunamayan öğe atlanır, silinen sayılır ({sayi})")
+        kontrol("junkemail" not in istemci._senkronizasyon,
+                "önbellek yine de düşürülür")
+        # Hepsi bulunamadıysa okunur hata
+        def hep_yok_istek(govde: str, tekrar: int = 3):
+            if "SyncFolderItems" in govde:
+                if "<m:SyncState></m:SyncState>" in govde:
+                    return ET.fromstring(sync_yaniti(["ID-Y1"]))
+                return ET.fromstring(sync_yaniti([]))
+            raise ews_mod.EwsHata("EWS yanıt kodu: ErrorItemNotFound")
+        istemci.istek = hep_yok_istek
+        try:
+            istemci.klasoru_bosalt("junkemail")
+            kontrol(False, "hepsi bulunamadıysa hata yükselmeli")
+        except ews_mod.EwsHata as exc:
+            kontrol("bulunamadı" in str(exc),
+                    f"tümü yok → okunur hata ({exc})")
+    finally:
+        istemci.istek = eski_istek
+        istemci._senkronizasyon.pop("junkemail", None)
 
     # --- FindFolder hatası: liste yine de dönülür ---
     istemci._ozel_klasor_onbellek = None

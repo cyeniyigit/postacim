@@ -1308,3 +1308,32 @@ menüsünü ilave edelim."
   alınamaz — onay diyalogu zorunlu.
 - Çok büyük klasörlerde (binlerce mesaj) süre uzun olabilir; durum
   çubuğu iş sürerken "boşaltılıyor…" gösterir.
+
+## EWS boşaltmada ErrorItemNotFound (2026-11-23)
+
+**Rapor:** "Kurum mailinde çöp kutusunu boşalt dediğimde EWS Yanıt Kodu:
+ErrorItemNotFound."
+
+### Teşhis / Değişiklikler
+- SyncFolderItems döndürdüğü ItemId'ler **ChangeKey'siz** DeleteItem'a
+  yazılıyordu; ayrıca senkron ile silme arasında öğe kaybolursa toplu
+  istek komple düşüyordu.
+- `_kalici_sil_coklu`: öğeler artık `(Id, ChangeKey)` çifti; gövde
+  `_kalici_sil_govdesi` ChangeKey'i de yazar. Toplu istek
+  ErrorItemNotFound verirse **tek tek** denenir; bulunamayanlar atlanır
+  (sayılmaz), diğer hatalar yükselir. `silinen == 0` ve bulunamayan > 0
+  ise okunur hata: "N öğe sunucuda bulunamadı".
+- Test düzeltmesi: mock `istek` gerçek davranışı taklit etmeli —
+  ResponseCode hatasında **EwsHata fırlat** (eskisi hatayı eleman olarak
+  döndürüyor, kontrol hiç çalışmıyordu → yanlış "başarı" sayısı).
+
+### Canlı doğrulama (kurum sunucusu, kullanıcı talebiyle)
+- Salt okuma SyncFolderItems: deleteditems 0 öğe (o an boş — hata
+  yeniden üretilemedi), junkemail 560, inbox 1444 → senkron sağlıklı.
+- `klasoru_bosalt("junkemail")` canlı: **1120 mesaj ~4 sn, hata yok**;
+  sonrasında salt okuma senkron junkemail = 0 → gerçekten boşaldı.
+
+### Testler (hepsi geçti)
+- `ews_klasor_test.py`: `sync_yaniti` ChangeKey'li; toplu HardDelete
+  (Id+ChangeKey); toplu başarısızsa tek tek (X1/X3 silinir, X2 atlanır →
+  sayı 2); hepsi yok → okunur hata; kısıt/önbellek kontrolleri.

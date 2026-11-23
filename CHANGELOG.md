@@ -3,6 +3,18 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.15] — 2026-11-23
+
+### Düzeltmeler
+- **Kurum (EWS) hesabında "Çöp Kutusunu Boşalt" `ErrorItemNotFound`
+  veriyordu.** Silme istekleri artık `ItemId + ChangeKey` ile gönderilir;
+  toplu istek `ErrorItemNotFound` verirse öğeler **tek tek** denenir ve
+  artık sunucuda bulunmayan öğeler atlanır (senkron ile silme arasında
+  kaybolanlar). Hiçbir öğe silinemediyse okunur hata verilir.
+- **Canlı doğrulama (kurum sunucusu):** spam klasörü yeni yolla
+  boşaltıldı — 1120 mesaj ~4 saniyede, hata yok; salt okuma senkron
+  ile klasörün gerçekten boşaldığı doğrulandı.
+
 ## [0.1.14] — 2026-11-23
 
 ### Eklenen
