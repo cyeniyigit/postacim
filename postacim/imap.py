@@ -784,6 +784,26 @@ class ImapIstemci:
         self._ondan_sil(uid)
 
     @_kilitli
+    def klasor_olustur(self, ad: str) -> str:
+        """Yeni klasör (Gmail etiketi) oluşturur: `CREATE <klasör>`.
+
+        Döndürülen değer klasör **kimliğidir** (değiştirilmiş UTF-7 sunucu
+        adı); klasör listesi yenilendiğinde aynı kimlikle görünür.
+        """
+        ad = (ad or "").strip()
+        if not ad:
+            raise EwsHata("Klasör adı boş olamaz.")
+        if any(ord(ch) < 0x20 for ch in ad):
+            raise EwsHata("Klasör adı kontrol karakterleri içeremez.")
+        kod = _utf7_kodla(ad)
+        tip, _ = self._komut("create", _tirnakla(kod))
+        if tip != "OK":
+            raise EwsHata(f"Klasör oluşturulamadı: {ad} — sunucu reddetti.")
+        # Listeleme güncellenene kadar komutlar bu adla çalışsın
+        self._klasor_adlari[kod] = kod
+        return kod
+
+    @_kilitli
     def klasor_sil(self, kimlik: str) -> None:
         """Klasörü (IMAP etiketini) siler: `DELETE <klasör>`.
 

@@ -70,6 +70,21 @@ ETIKETLER = {
     "outbox": "Giden Kutusu",
 }
 
+# FindFolder msgfolderroot, varsayılan klasörleri de (kendi FolderId'leriyle)
+# döndürür; bunlar zaten GetFolder ile alındığından ada göre elenir
+# (sunucu dili İngilizce ya da Türkçe olabilir).
+VARSAYILAN_KLASOR_ADLARI = {
+    "inbox", "gelen kutusu", "sent items", "gönderilmiş öğeler",
+    "gönderilmiş", "drafts", "taslaklar", "deleted items",
+    "silinmiş öğeler", "junk email", "junk e-mail", "önemsiz e-posta",
+    "önemsiz", "archive", "arşiv", "outbox", "giden kutusu", "conflicts",
+    "çakışmalar", "local failures", "yerel hatalar", "server failures",
+    "sunucu hataları", "sync issues", "eşitleme sorunları",
+    "conversation history", "yazışma geçmişi", "journal", "günlük",
+    "notes", "notlar", "tasks", "görevler", "contacts", "kişiler",
+    "calendar", "takvim", "rss feeds", "rss akışları",
+}
+
 
 class EwsHata(Exception):
     """EWS istegi basarisiz oldu."""
@@ -434,6 +449,17 @@ def _kacis(deger: str) -> str:
     )
 
 
+def _klasor_id_xml(kimlik: str) -> str:
+    """Klasör kimliğini SOAP gövdesine yazılacak XML'e çevirir.
+
+    Bilinen 7 klasör DistinguishedFolderId ile (sunucu yerelleştirmesinden
+    etkilenmez); kullanıcı klasörleri ham `FolderId` ile belirtilir.
+    """
+    if kimlik in KLASORLER:
+        return f'<t:DistinguishedFolderId Id="{kimlik}"/>'
+    return f'<t:FolderId Id="{_kacis(kimlik)}"/>'
+
+
 def _zaman(ts: str) -> str:
     """EWS tarihini (2011-01-01T...) yerel okunur bicime cevirir."""
     if not ts:
@@ -504,6 +530,10 @@ class EwsIstemci:
         self._takvim_onbellek: dict | None = None  # {"durum", "randevular", "tam"}
         self._mime_onbellek: dict[str, bytes] = {}
         self._getattachment_calismiyor = False
+        # Kullanıcı klasörleri (FindFolder): 60 sn önbellek — her yenilemede
+        # ek istek atılmasın; klasor_olustur önbelleği düşürür.
+        self._ozel_klasor_onbellek: list = None
+        self._ozel_klasor_zaman: float = 0.0
         self.oturum.headers.update(
             {
                 "User-Agent": "Postacim/1.0",
@@ -628,7 +658,7 @@ class EwsIstemci:
             raise
         except EwsHata:
             # Tek istek başarısızsa eski yolu (seri) dene
-            return self._klasor_listesi_seri()
+            return self._ozel_klasorler(self._klasor_listesi_seri())
 
         klasorler = kok.findall(".//m:Folders/*", NS)
         liste: list = []
@@ -666,8 +696,59 @@ class EwsIstemci:
                     )
                 )
             if len(liste) != len(kimlikler):
-                return self._klasor_listesi_seri()
-        return liste
+                return self._ozel_klasorler(self._klasor_listesi_seri())
+        return self._ozel_klasorler(liste)
+
+    def _ozel_klasorler(self, liste: list) -> list:
+        """Kullanıcı klasörlerini FindFolder ile listeye ekler.
+
+        Başarısız olursa (sunucu desteklemiyorsa) sessizce mevcut listeyi
+        döndürür — 7 varsayılan klasör her koşulda görünür. Sonuçlar 60 sn
+        önbelleklenir (otomatik yenileme ek istek atmasın).
+        """
+        simdi = time.time()
+        if self._ozel_klasor_onbellek is not None and \
+                simdi - self._ozel_klasor_zaman < 60:
+            return liste + list(self._ozel_klasor_onbellek)
+        govde = (
+            '<m:FindFolder Traversal="Shallow">'
+            '<m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape>'
+            '<m:ParentFolderIds>'
+            '<t:DistinguishedFolderId Id="msgfolderroot"/>'
+            "</m:ParentFolderIds>"
+            "</m:FindFolder>"
+        )
+        try:
+            kok = self.istek(govde)
+        except EwsYetkiHatasi:
+            raise
+        except (EwsHata, requests.RequestException, ValueError):
+            return liste
+        var = {k.ad.casefold() for k in liste} | VARSAYILAN_KLASOR_ADLARI
+        ozel: list = []
+        for el in kok.findall(".//m:Folders/t:Folder", NS):
+            fid = el.find("t:FolderId", NS)
+            ad = (el.findtext("t:DisplayName", "", NS) or "").strip()
+            if fid is None or not fid.get("Id") or not ad:
+                continue
+            if ad.casefold() in var:
+                continue  # varsayılan klasör zaten listede
+            sinif = el.findtext("t:FolderClass", "", NS) or ""
+            if sinif and not sinif.startswith("IPF.Note"):
+                continue  # takvim/kişiler/görevler gibi posta klasörü değil
+            ozel.append(
+                Klasor(
+                    kimlik=fid.get("Id"),
+                    ad=ad,
+                    toplam=int(el.findtext("t:TotalCount", "0", NS) or 0),
+                    okunmamis=int(el.findtext("t:UnreadCount", "0", NS) or 0),
+                )
+            )
+            var.add(ad.casefold())
+        ozel.sort(key=lambda k: k.ad.casefold())
+        self._ozel_klasor_onbellek = ozel
+        self._ozel_klasor_zaman = simdi
+        return liste + ozel
 
     def _klasor_listesi_seri(self) -> list:
         """Yedek yol: klasör başına ayrı GetFolder (eski davranış)."""
@@ -969,7 +1050,7 @@ class EwsIstemci:
             govde = (
                 "<m:SyncFolderItems>"
                 "<m:ItemShape><t:BaseShape>Default</t:BaseShape></m:ItemShape>"
-                f"<m:SyncFolderId><t:DistinguishedFolderId Id=\"{klasor}\"/></m:SyncFolderId>"
+                f"<m:SyncFolderId>{_klasor_id_xml(klasor)}</m:SyncFolderId>"
                 f"<m:SyncState>{kayit['durum']}</m:SyncState>"
                 "<m:Ignore/><m:MaxChangesReturned>512</m:MaxChangesReturned>"
                 "</m:SyncFolderItems>"
@@ -1352,11 +1433,44 @@ class EwsIstemci:
         """Mesaji tasir (silmek icin 'deleteditems' hedefi kullanilir)."""
         govde = (
             "<m:MoveItem>"
-            f"<m:ToFolderId><t:DistinguishedFolderId Id=\"{hedef}\"/></m:ToFolderId>"
+            f"<m:ToFolderId>{_klasor_id_xml(hedef)}</m:ToFolderId>"
             f"<m:ItemIds><t:ItemId Id=\"{_kacis(mesaj.item_id)}\"/></m:ItemIds>"
             "</m:MoveItem>"
         )
         self.istek(govde)
+
+    def klasor_olustur(self, ad: str, ebeveyn: str = "msgfolderroot") -> str:
+        """Yeni klasör oluşturur (CreateFolder); yeni FolderId döndürür.
+
+        Klasör adı sunucunun olduğu gibi kaydedilir (Türkçe karakterler
+        sorunsuzdur). Yeniden deneme yapılmaz (tekrar=1): geçici bir hatadan
+        sonra aynı istek tekrarlanırsa sunucuda **iki** klasör oluşabilir.
+        """
+        ad = (ad or "").strip()
+        if not ad:
+            raise EwsHata("Klasör adı boş olamaz.")
+        ebeveyn_xml = (
+            f'<t:DistinguishedFolderId Id="{_kacis(ebeveyn)}"/>'
+            if ebeveyn in ("msgfolderroot", "root") or ebeveyn in KLASORLER
+            else f'<t:FolderId Id="{_kacis(ebeveyn)}"/>'
+        )
+        govde = (
+            "<m:CreateFolder>"
+            f"<m:ParentFolderId>{ebeveyn_xml}</m:ParentFolderId>"
+            "<m:Folders>"
+            "<t:Folder>"
+            f"<t:DisplayName>{_kacis(ad)}</t:DisplayName>"
+            "</t:Folder>"
+            "</m:Folders>"
+            "</m:CreateFolder>"
+        )
+        kok = self.istek(govde, tekrar=1)
+        el = kok.find(".//m:Folders/t:Folder/t:FolderId", NS)
+        if el is None or not el.get("Id"):
+            raise EwsHata("Klasör oluşturuldu ancak kimliği alınamadı.")
+        # Yeni klasör listede hemen görünsün: FindFolder önbelleği düşer
+        self._ozel_klasor_onbellek = None
+        return el.get("Id")
 
     def kalici_sil(self, mesaj: Mesaj) -> None:
         govde = (

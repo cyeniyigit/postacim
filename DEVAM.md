@@ -1016,9 +1016,73 @@ güncellemede `If-Match` doğru gider.
 - `tests/run_all.sh` güncellendi; tüm çevrimdışı testler geçti.
 
 ## Kalan işler
+- [ ] Kurum sunucusunda EWS `FindFolder`/`CreateFolder` canlı doğrulaması
+      (klasör oluşturma özelliği testli ama canlı deneme kullanıcı onayında)
+- [ ] EWS kullanıcı klasörlerinde sağ tuş → silme (Exchange `DeleteFolder`)
 - [ ] Tekrarlayan bir randevunun **tek bir tekrarını** silmek/gizlemek
       (`RECURRENCE-ID`)
 - [ ] Google modern uç (OAuth2) desteği
 - [ ] CalDAV'da `VTIMEZONE` içindeki özel saat dilimleri çözülmüyor (yerel saat)
 - [ ] Takvim randevuları için arama/kategori etiketi
 - [ ] Fedora/openSUSE/Pardus paket dosyaları (spec / debian/)
+
+## Klasör oluşturma (sağ tuş) (2026-11-23)
+
+**Talep:** "posta kutularımda yeni klasör oluşturmak istiyorum" (IMAP/Gmail
+ve Exchange).
+
+### Değişiklikler
+- **`imap.py → klasor_olustur(ad)`**: IMAP `CREATE <klasör>`; `_kilitli`.
+  - Adlar değiştirilmiş UTF-7 ile gider (`_utf7_kodla`) → Türkçe karakterler
+    telde ascii (`Yeni Klas&APY-r`); `_tirnakla` ile tırnaklı.
+  - Boş ad / kontrol karakterli ad → okunur `EwsHata`; sunucu reddi
+    (NO) → `EwsHata("Klasör oluşturulamadı: … — sunucu reddetti.")`
+  - Başarıda yeni kimlik (kodlanmış sunucu adı) `_klasor_adlari`ya eklenir —
+    listeleme yenilenmeden önce de komutlar yeni klasörde çalışır.
+- **`ews.py`:**
+  - `klasor_olustur(ad, ebeveyn="msgfolderroot")`: `CreateFolder`; klasör adı
+    `_kacis` ile XML'e kaçışlı yazılır; **tekrar=1** (geçici hatada istek
+    tekrarlanırsa sunucuda iki klasör oluşabilir) → `FolderId` döner ve
+    FindFolder önbelleği düşürülür.
+  - **Kullanıcı klasörleri artık listeleniyor:** `_ozel_klasorler()` —
+    `FindFolder Traversal="Shallow"` `msgfolderroot` altında; posta olmayan
+    klasörler (`FolderClass` IPF.Note değilse) ve varsayılan adlar
+    (`VARSAYILAN_KLASOR_ADLARI`, İngilizce + Türkçe) elenir. Sunucu
+    FindFolder'ı desteklemiyorsa sessizce 7 varsayılanla devam edilir
+    (EwsYetkiHatasi yukarı fırlar). Sonuç **60 sn önbelleklenir**
+    (`_ozel_klasor_onbellek`) — otomatik yenileme ek istek atmasın.
+  - `_klasor_id_xml(kimlik)`: bilinen 7 klasör `DistinguishedFolderId`,
+    kullanıcı klasörleri `t:FolderId` ile — `_senkronize` (SyncFolderItems)
+    ve `tasi` (MoveItem) artık her klasör türüyle çalışır.
+- **`ui.py`:**
+  - `_klasor_menu_olustur(iid)`: **"Yeni Klasör…" yalnız aktif hesapta**
+    (IMAP + EWS), klasör düğümünde *ve* hesap düğümünde (`hesap:<id>`)
+    görünür; "Klasörü Sil…" eskisi gibi yalnız aktif IMAP'te özel olmayan
+    klasörde (önce ayrıcı eklenir). Başka hesabın klasöründe menü yine yok.
+  - `klasor_olustur(ad=None)`: ad verilmezse `_klasor_adi_penceresi()` açılır
+    (ttk diyalog; Enter = Oluştur, Esc = İptal, `grab_set`); boş ad →
+    `showwarning`, istemciye gitmez. Oluşturma `_arka_plan`da;
+    `("yenile", "Klasör oluşturuldu: …")` → klasör listesi + sayaçlar tazelenir.
+  - Yeni ikon: `ikonlar/klasor_ekle.png` (20×20, klasör + artı).
+
+### Testler (hepsi geçti)
+- `ews_klasor_test.py` (**yeni**): CreateFolder gövdesi (kök, kaçışlı ad),
+  FolderId döndürme, önbellek düşürme; FindFolder listeleme — varsayılan
+  adlar/Takvim (IPF.Appointment) elenir, sayaçlar okunur; **60 sn
+  önbellek** (ikinci çağrıda istek yok); FindFolder hatasında 7 klasörle
+  devam; EwsYetkiHatasi yukarı; `_klasor_id_xml` ve kullanıcı klasörüne
+  taşıma (`t:FolderId`). İstek mock'lu → çevrimdışı.
+- `coklu_hesap_test.py`: sahte IMAP'ta `CREATE "Özel Notlar"` utf-7 adla;
+  haritaya ekleme; NO reddi ve boş ad → `EwsHata`
+- `imap_yerel_sunucu_test.py`: tel denetimi — ham komut
+  `CREATE "Yeni Klas&APY-r"` gerçek `imaplib` üzerinden
+- `hesap_ui_test.py`: menüde "Yeni Klasör…" aktif hesapta (inbox, özel
+  klasör, hesap düğümü), başka hesapta menü yok; oluşturma akışı hem IMAP
+  hem EWS istemcisine ulaşır; boş ad uyarı verip oluşturmaz; "Klasörü
+  Sil…" beklentileri korundu
+
+### Not / risk
+- Kurum Exchange sunucusunun `FindFolder`/`CreateFolder` desteği canlı
+  olarak denenmedi (FindItem sunucuda zaten bozuk). Desteklemiyorsa:
+  klasörler listelenmez/oluşturulamaz ama uygulama çalışmaya devam eder
+  (hata yolları testli). Canlı deneme kullanıcının onayına bırakıldı.

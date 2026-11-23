@@ -3,6 +3,40 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.9] — 2026-11-23
+
+### Eklenen
+- **Klasör oluşturma (sağ tuş):** klasör ağacında hesap ya da herhangi bir
+  klasöre sağ tıklayın → **"Yeni Klasör…"** (yalnız aktif hesapta; IMAP ve
+  EWS). Ad penceresi küçük bir diyalogdur (Enter = Oluştur, Esc = İptal);
+  boş ad uyarı verir. Oluşturma arka planda yapılır; bitince klasör listesi
+  ve sayaçlar otomatik yenilenir.
+  - **IMAP/Gmail:** `CREATE` komutu; adlar değiştirilmiş UTF-7 ile gider
+    (Türkçe karakterler telde ascii). Yeni klasör, listelenmeden önce de
+    komutlarda kullanılabilir.
+  - **Exchange (EWS):** `CreateFolder` istekleri kök (`msgfolderroot`) altında
+    açılır; yeniden deneme yapılmaz (geçici hatada aynı klasör iki kez
+    oluşmasın).
+- **EWS'te kullanıcı klasörleri artık listeleniyor.** 7 varsayılan klasörün
+  yanına `FindFolder` (`msgfolderroot`, Shallow) ile kullanıcı klasörleri de
+  eklenir; posta olmayan klasörler (takvim, kişiler, görevler) ve varsayılan
+  adlar elenir. `FindFolder` desteklemeyen sunucularda liste 7 klasörle
+  devam eder; sonuçlar 60 sn önbelleklenir.
+- Kullanıcı klasörüne taşıma: mesaj sağ tuş → Taşı listesinde artık
+  Exchange kullanıcı klasörleri de görünür (`FolderId` ile taşınır).
+
+### Testler
+- `tests/ews_klasor_test.py` (yeni) — CreateFolder gövdesi, FolderId
+  döndürme, FindFolder listeleme/eleme/önbellek/hata yolları, kullanıcı
+  klasörüne taşıma (istek mock'lu, çevrimdışı).
+- `tests/coklu_hesap_test.py` — IMAP `CREATE` komutu (utf-7), harita
+  güncellemesi, sunucu reddi ve boş ad hataları.
+- `tests/imap_yerel_sunucu_test.py` — tel denetimi: ham `CREATE "Yeni
+  Klas&APY-r"` komutu.
+- `tests/hesap_ui_test.py` — menüde "Yeni Klasör…" (aktif hesap, klasör ve
+  hesap düğümü), oluşturma akışı istemciye ulaşır, boş ad uyarısı, EWS
+  hesapta oluşturma çalışır.
+
 ## [0.1.8] — 2026-11-23
 
 ### Eklenen

@@ -41,6 +41,7 @@ class SahteIstemci:
     def __init__(self, hesap: dict):
         self.hesap = hesap
         self.silinenler: list = []  # klasor_sil çağrıları
+        self.olusturulanlar: list = []  # klasor_olustur çağrıları
 
     def klasor_listesi(self):
         return [
@@ -86,6 +87,10 @@ class SahteIstemci:
 
     def klasor_sil(self, kimlik):
         self.silinenler.append(kimlik)
+
+    def klasor_olustur(self, ad):
+        self.olusturulanlar.append(ad)
+        return ad
 
     def kalici_sil(self, mesaj):
         pass
@@ -139,6 +144,9 @@ def main() -> int:
     import tkinter.messagebox as messagebox
     eski_soru = messagebox.askyesno
     messagebox.askyesno = lambda *a, **k: True
+    eski_uyari = messagebox.showwarning
+    uyari_kutular: list = []
+    messagebox.showwarning = lambda *a, **k: uyari_kutular.append(a)
 
     uygulama = ui_mod.Postacim()
     hata = []
@@ -207,21 +215,33 @@ def main() -> int:
             kontrol(uygulama.hesap_degisken.get() == gmail_id,
                     "menü işareti yeni hesapta")
 
-        # --- Klasör silme (sağ tuş menüsü) — aktif IMAP hesabı ---
+        # --- Klasör menüsü (sağ tuş) — aktif IMAP hesabı ---
         gmail_istemci = uygulama.istemci
-        menu_ozel = uygulama._klasor_menu_olustur(f"{gmail_id}|inbox")
-        kontrol(menu_ozel is None,
-                "özel klasörde (inbox) silme öğesi yok")
-        menu_label = uygulama._klasor_menu_olustur(f"{gmail_id}|Proje X")
-        ogeler = []
-        if menu_label is not None:
-            ogeler = [
-                menu_label.entrycget(i, "label")
-                for i in range(menu_label.index("end") + 1)
-                if menu_label.type(i) == "command"
+
+        def menu_komutlari(menu):
+            if menu is None:
+                return []
+            return [
+                menu.entrycget(i, "label")
+                for i in range(menu.index("end") + 1)
+                if menu.type(i) == "command"
             ]
+
+        # Aktif IMAP: "Yeni Klasör…" her klasörde; "Klasörü Sil…" yalnız
+        # özel olmayan klasörde
+        ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"{gmail_id}|inbox"))
+        kontrol("Yeni Klasör…" in ogeler,
+                f"IMAP inbox'ta yeni klasör öğesi var ({ogeler})")
+        kontrol("Klasörü Sil…" not in ogeler,
+                f"özel klasörde (inbox) silme öğesi yok ({ogeler})")
+        ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"{gmail_id}|Proje X"))
         kontrol("Klasörü Sil…" in ogeler,
                 f"özel olmayan klasörde silme öğesi var ({ogeler})")
+        kontrol("Yeni Klasör…" in ogeler,
+                f"özel olmayan klasörde yeni klasör öğesi de var ({ogeler})")
+        ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"hesap:{gmail_id}"))
+        kontrol("Yeni Klasör…" in ogeler,
+                f"hesap düğümünde yeni klasör öğesi var ({ogeler})")
         kontrol(uygulama._klasor_menu_olustur(f"{kurum_id}|inbox") is None,
                 "başka hesabın klasöründe menü yok")
         # Silme akışı: onay (askyesno=True) → istemci.klasor_sil çağrılır
@@ -230,6 +250,18 @@ def main() -> int:
         kontrol(gmail_istemci.silinenler == ["Proje X"],
                 f"klasör silme istemciye ulaştı ({gmail_istemci.silinenler})")
 
+        # Oluşturma akışı: ad verilmiş → pencere açılmaz, arka planda
+        uygulama.klasor_olustur("Proje Y")
+        bekle(uygulama, 2)
+        kontrol(gmail_istemci.olusturulanlar == ["Proje Y"],
+                f"klasör oluşturma istemciye ulaştı ({gmail_istemci.olusturulanlar})")
+        # Boş ad → uyarı kutusu, istemciye gitmez
+        uygulama.klasor_olustur("   ")
+        bekle(uygulama, 1)
+        kontrol(len(uyari_kutular) == 1
+                and gmail_istemci.olusturulanlar == ["Proje Y"],
+                f"boş klasör adı uyarı verir, oluşturmaz ({uyari_kutular})")
+
         # Geri dönüş
         uygulama.klasor_listesi.selection_set(f"{kurum_id}|sentitems")
         uygulama.klasor_listesi.event_generate("<<TreeviewSelect>>")
@@ -237,8 +269,18 @@ def main() -> int:
         kontrol(uygulama.aktif_id == kurum_id, "eski hesaba dönüldü")
         kontrol(uygulama.klasor == "sentitems", "sentitems seçildi")
         kontrol(uygulama.cozum_yok is False, "EWS hesapta cozum_yok=False")
-        kontrol(uygulama._klasor_menu_olustur(f"{kurum_id}|inbox") is None,
-                "EWS (kurum) hesapta klasör silme öğesi yok")
+        ogeler = menu_komutlari(uygulama._klasor_menu_olustur(f"{kurum_id}|inbox"))
+        kontrol("Yeni Klasör…" in ogeler,
+                f"aktif EWS hesapta yeni klasör öğesi var ({ogeler})")
+        kontrol("Klasörü Sil…" not in ogeler,
+                f"EWS (kurum) hesapta klasör silme öğesi yok ({ogeler})")
+        # EWS hesapta da oluşturma çalışır
+        kurum_istemci = uygulama.istemci
+        uygulama.klasor_olustur("Kurum Klasörü")
+        bekle(uygulama, 2)
+        kontrol(kurum_istemci.olusturulanlar == ["Kurum Klasörü"],
+                f"EWS hesapta oluşturma istemciye ulaştı "
+                f"({kurum_istemci.olusturulanlar})")
 
         # --- Hesaplar menüsü ---
         ogeler = []
@@ -324,6 +366,7 @@ def main() -> int:
             pass
         ui_mod.Ayarlar, ui_mod.Postacim._istemci_kur = eski_ayarlar, eski_kur
         messagebox.askyesno = eski_soru
+        messagebox.showwarning = eski_uyari
 
     if hata:
         print("\n!! İstisnalar:")

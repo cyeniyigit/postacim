@@ -3813,7 +3813,7 @@ class Postacim(tk.Tk):
     def _klasor_menusu(self, olay):
         """Klasör ağacında sağ tuş → klasör bağlam menüsü."""
         iid = self.klasor_listesi.identify_row(olay.y)
-        if not iid or iid.startswith("hesap:"):
+        if not iid:
             return
         if iid not in self.klasor_listesi.selection():
             self.klasor_listesi.selection_set(iid)
@@ -3824,29 +3824,37 @@ class Postacim(tk.Tk):
     def _klasor_menu_olustur(self, iid: str):
         """Klasör için bağlam menüsü (test için ayrıldı).
 
-        "Klasörü Sil…" yalnız **aktif IMAP hesabında** ve özel olmayan
+        **"Yeni Klasör…"** yalnız **aktif hesapta** görünür (IMAP ve EWS);
+        kökte (hesap düğümünde) ya da herhangi bir klasörde açılabilir.
+        "Klasörü Sil…" ise yalnız aktif IMAP hesabında ve özel olmayan
         klasörlerde görünür (Exchange hesaplarında klasör silme yok).
         Menüde öğe yoksa None döner.
         """
-        hesap_id, ayraclı, kimlik = iid.partition("|")
-        if not ayraclı or not kimlik:
-            return None
+        if iid.startswith("hesap:"):
+            _, _, hesap_id = iid.partition(":")
+            kimlik = None
+        else:
+            hesap_id, ayracılı, kimlik = iid.partition("|")
+            if not ayracılı or not kimlik:
+                return None
         hesap = self.ayarlar.hesap(hesap_id)
         menu = tk.Menu(self, tearoff=0)
-        if (
-            hesap_id == self.aktif_id
-            and hesap is not None
-            and hesap.get("tur") == "imap"
-            and kimlik not in SIRA
-            and self.istemci is not None
-        ):
-            ad = next(
-                (k.ad for k in self.klasor_liste if k.kimlik == kimlik), kimlik
-            )
+        if hesap_id == self.aktif_id and hesap is not None \
+                and self.istemci is not None:
             menu.add_command(
-                label="Klasörü Sil…", image=self.ikon["sil"], compound="left",
-                command=lambda: self.klasor_sil(kimlik, ad),
+                label="Yeni Klasör…", image=self.ikon.get("klasor_ekle"),
+                compound="left", command=self.klasor_olustur,
             )
+            if kimlik and hesap.get("tur") == "imap" and kimlik not in SIRA:
+                menu.add_separator()
+                ad = next(
+                    (k.ad for k in self.klasor_liste if k.kimlik == kimlik),
+                    kimlik,
+                )
+                menu.add_command(
+                    label="Klasörü Sil…", image=self.ikon["sil"],
+                    compound="left", command=lambda: self.klasor_sil(kimlik, ad),
+                )
         # Boş menüde `index("end)"` sürüme göre None ya da TclError verir;
         # her iki durumda da "öğe yok" demektir.
         try:
@@ -3874,6 +3882,66 @@ class Postacim(tk.Tk):
         self.istemci.klasor_sil(kimlik)
         # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
         return ("yenile", "Klasör silindi")
+
+    def klasor_olustur(self, ad: str | None = None):
+        """Yeni klasör oluşturur (sağ tuş → Yeni Klasör…).
+
+        `ad` verilmezse küçük bir ad penceresi açılır; oluşturma arka
+        planda yapılır, bitince klasör listesi yenilenir.
+        """
+        if self.istemci is None:
+            return
+        if ad is None:
+            ad = self._klasor_adi_penceresi()
+            if not ad:
+                return
+        ad = ad.strip()
+        if not ad:
+            messagebox.showwarning("Yeni Klasör", "Klasör adı boş olamaz.")
+            return
+        self.durum.set(f"Klasör oluşturuluyor: {ad}…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._klasor_olustur_cek, ad),
+            daemon=True,
+        ).start()
+
+    def _klasor_olustur_cek(self, ad: str):
+        self.istemci.klasor_olustur(ad)
+        # Klasör listesi + sayaçlar yenilenir ("yenile" sonucu)
+        return ("yenile", f"Klasör oluşturuldu: {ad}")
+
+    def _klasor_adi_penceresi(self) -> str | None:
+        """Klasör adı soran küçük pencere; İptal/boşsa None döner."""
+        pencere = tk.Toplevel(self)
+        pencere.title("Yeni Klasör")
+        pencere.transient(self)
+        self._pencere_simgesi(pencere)
+        pencere.resizable(False, False)
+        ttk.Label(
+            pencere, text="Klasör adı:",
+        ).grid(row=0, column=0, columnspan=2, padx=14, pady=(12, 4), sticky="w")
+        ad_degisken = tk.StringVar()
+        giris = ttk.Entry(pencere, textvariable=ad_degisken, width=34)
+        giris.grid(row=1, column=0, columnspan=2, padx=14, pady=4)
+
+        sonuc = {"ad": None}
+
+        def kapat(tamam: bool):
+            sonuc["ad"] = ad_degisken.get().strip() if tamam else None
+            pencere.destroy()
+
+        ttk.Button(pencere, text="Oluştur", command=lambda: kapat(True)).grid(
+            row=2, column=0, padx=14, pady=10, sticky="e"
+        )
+        ttk.Button(pencere, text="İptal", command=lambda: kapat(False)).grid(
+            row=2, column=1, padx=8, pady=10, sticky="w"
+        )
+        giris.focus_set()
+        giris.bind("<Return>", lambda olay: kapat(True))
+        giris.bind("<Escape>", lambda olay: kapat(False))
+        pencere.grab_set()
+        pencere.wait_window()
+        return sonuc["ad"]
 
     # ------------------------------------------------------- menü eylemleri
 

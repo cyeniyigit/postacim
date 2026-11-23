@@ -228,6 +228,13 @@ class SahteImap:
             )
         return ("OK", [b""])
 
+    def create(self, mailbox):
+        self.komutlar.append(("create", (mailbox,)))
+        # Gerçek sunucular gibi bazı adları reddet (NO → istemci hata yolu)
+        if "Korumali" in mailbox:
+            return ("NO", [b"Mailbox name not permitted"])
+        return ("OK", [b"Created"])
+
 
 def _zarf(ad, adres, konu, tarih, bayrak=""):
     """RFC822.HEADER baytları üretir."""
@@ -406,6 +413,28 @@ def imap_test():
             # yol B: BAD/hata fırlatılır → "IMAP komutu reddedildi".
             kontrol("reddetti" in str(exc) or "reddedildi" in str(exc),
                     f"sunucu reddi → okunur hata ({exc})")
+
+        # Klasör oluşturma (IMAP CREATE)
+        istemci.klasor_olustur("Özel Notlar")
+        istemci.klasor_olustur("Proje / Alt")
+        beklenen = imap_mod._utf7_kodla("Özel Notlar")
+        kontrol(("create", (f'"{beklenen}"',)) in istemci.imap.komutlar,
+                f'CREATE komutu utf-7 adla gönderildi (CREATE "{beklenen}")')
+        kontrol(istemci._klasor_adlari.get(beklenen) == beklenen,
+                "yeni klasör haritaya eklendi (listelemeden önce)")
+        try:
+            istemci.klasor_olustur("Korumali Klasor")
+            kontrol(False, "sunucunun reddettiği ad hata fırlatmalı")
+        except EwsHata as exc:
+            kontrol("reddetti" in str(exc) or "reddedildi" in str(exc)
+                    or "olusturulamadı" in str(exc).lower()
+                    or "oluşturulamadı" in str(exc),
+                    f"oluşturma reddi → okunur hata ({exc})")
+        try:
+            istemci.klasor_olustur("   ")
+            kontrol(False, "boş klasör adı hata fırlatmalı")
+        except EwsHata as exc:
+            kontrol("boş" in str(exc), f"boş ad reddedildi ({exc})")
 
 
 def smtp_test():

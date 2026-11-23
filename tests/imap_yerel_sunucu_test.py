@@ -118,6 +118,8 @@ class MiniImapSunucu:
             return b"* 3 EXISTS\r\n* 0 RECENT\r\n" + etiket.encode() + b" OK Devam\r\n"
         if komut == "DELETE":
             return etiket.encode() + b" OK Silindi\r\n"
+        if komut == "CREATE":
+            return etiket.encode() + b" OK Olusturuldu\r\n"
         if komut == "LOGOUT":
             conn_yok = b"* BYE\r\n" + etiket.encode() + b" OK Devam\r\n"
             return conn_yok
@@ -163,6 +165,8 @@ def main() -> int:
             klasorler = istemci.klasor_listesi()
             # Klasör silme de telde doğrulanır: DELETE "Proje X"
             istemci.klasor_sil("Proje X")
+            # Klasör oluşturma: CREATE "Yeni Klasör"
+            istemci.klasor_olustur("Yeni Klasör")
         finally:
             try:
                 istemci.imap.shutdown()
@@ -175,6 +179,10 @@ def main() -> int:
 
     kontrol(any('DELETE "Proje X"' in k for k in komutlar),
             'ham DELETE komutu: DELETE "Proje X"')
+
+    kontrol(any(f'CREATE "{imap_mod._utf7_kodla("Yeni Klasör")}"' in k
+                for k in komutlar),
+            'ham CREATE komutu: CREATE "Yeni Klas&APY-r" (utf-7)')
 
     kontrol(any(k.endswith('LIST "" *') for k in komutlar),
             'ham LIST komutu `LIST "" *` (tırnaklı boş dizin)')
