@@ -260,6 +260,11 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   (`[resim: logo.png]`); tıklayınca ya da **"Resimleri göster"** düğmesiyle
   gövdede açılır (uzak/gömülü/cid resimler). `tkinterweb` kurulu değilse
   düz metin okuyucuya düşer. Ek listesi ayrı çerçevededir
+- **Gövde ölçekleme:** gövde alanında yatay/dikey kaydırma çubukları vardır;
+  geniş içerik (geniş tablo, sabit aralıklı metin) **"Sığdır"** düğmesiyle
+  pencere genişliğine sığdırılır, **"Genişliğe sığdır"** seçeneği açıksa
+  pencere yeniden boyutlandırıldığında otomatik sığdırılır. Ctrl+tekerlek
+  yakınlaştırır, Ctrl+0 sıfırlar
 - **Arama:** konu, gönderen veya önizleme içinde — tüm klasör üzerinde
   (istemci tarafında, anında)
 - **Gönder/Al (F9):** kutuyu anında tazeler — klasör sayaçları, onbellekli
@@ -269,6 +274,12 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   tazelenir (Dosya → Otomatik yenileme: Kapalı / 30 sn / 1 dk / 2 dk / 5 dk;
   varsayılan **1 dakika**, tercih hatırlanır). Yeni mesaj gelmezse durum
   çubuğu bozulmaz; mesaj listesinde **seçim ve kaydırma konumu korunur**
+- **Yeni e-posta uyarısı:** gelen kutusu sayısı arttığında işletim sistemi
+  bildirimi gönderilir (uygulama simgesiyle; `notify-send` yoksa D-Bus
+  üzerinden). Sistem bildirim balonları kapalıysa **uygulama içinde** geçici
+  bir uyarı penceresi gösterilir ve durum çubuğu bilgilendirir — uyarı
+  her durumda görünür. Ayarlar ▸ Genel ▸ Bildirimler'den kapatılabilir /
+  sistem balonları açılabilir
 - **Hesaptan Çıkış (Ctrl+Q):** oturumu kapatır — istemci ve onbellekler
   temizlenir, kayıtlı parola silinir, giriş penceresi yeniden açılır
   (Dosya menüsü + üst çubuk düğmesi)
@@ -320,6 +331,8 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
 | `Ctrl+Shift+R` | Yanıtla herkese |
 | `Ctrl+I` | İlet |
 | `Ctrl+C` | Mesajı kopyala (liste odaklıyken) |
+| `Ctrl+tekerlek` | Gövdeyi yakınlaştır / uzaklaştır |
+| `Ctrl+0` | Gövde ölçeğini %100'e sıfırla |
 | `F5` | Klasörü yenile (tam) |
 | `F9` | Gönder/Al (artımlı güncelleme) |
 | `Ctrl+Q` | Hesaptan Çıkış |
@@ -379,6 +392,8 @@ MIME içeriğinden ayrılır).
 
 | Belirti | Sebep / çözüm |
 |---|---|
+| Yeni e-posta geldiğinde masaüstü uyarısı çıkmıyor | GNOME'da bildirim balonları kapalı olabilir (`show-banners=false`). Ayarlar ▸ Genel ▸ Bildirimler'de "Sistem bildirimlerini aç" düğmesine basın; uygulama ayrıca içinde uyarı penceresi gösterir. |
+| Gövde sağa kayıyor, içeriğin bir kısmı görünmüyor | Gövde alanındaki yatay kaydırma çubuğunu kullanın veya "Sığdır" düğmesiyle içeriği pencere genişliğine sığdırın. |
 | Menüde "Postacım" var ama tıklayınca hiçbir şey olmuyor | Masaüstü girdisinden açılan uygulamanın hata çıktısı ekrana basılmaz. Hata günlüğü: `~/.local/state/postacim/hata.log`. Sık nedenler: `python3-tk` eksik (`sudo apt install python3-tk`), sanal ortam bozulmuş (Python sürümü değişmiş olabilir). Çözüm: Postacım klasöründe `./kur.sh` ile yeniden kurun. |
 | Terminalden `postacim` çalıştırınca "No module named postacim" | Kurulum kaynak klasörüne bağlı kalmış. `./kur.sh` ile yeniden kurun (artık klasörü silebilirsiniz). |
 | "Arayüz açılamadı" / `ImportError: No module named 'tkinter'` | Tk bileşeni eksik: `sudo apt install python3-tk` (Fedora: `python3-tkinter`, Arch: `tk`). |

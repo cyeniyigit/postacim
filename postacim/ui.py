@@ -204,6 +204,10 @@ class Postacim(tk.Tk):
         # Bildirim için: hesap_id → son bilinen gelen kutusu sayısı
         self._son_gelen_sayi: dict[str, int] = {}
         self._bildirim_arac = shutil.which("notify-send")
+        self._bildirim_gdbus = shutil.which("gdbus")
+        self._bildirim_acik = bool(self.ayarlar.al("bildirim", True))
+        self._bildirim_balon_durumu: bool | None = None
+        self._toast = None
         # Bildirim denetimi otomatik yenilemeden bağımsız çalışır
         self._bildirim_zamanlayici = None
         self._bildirim_bekliyor = False
@@ -640,19 +644,33 @@ class Postacim(tk.Tk):
         )
         self.resim_dugmesi.pack(side="left")
         self.html_modu = HtmlFrame is not None
+        # Gövde görüntüleme durumu (zoom / otomatik sığdırma)
+        self._gövde_zoom = 1.0
+        self._gövde_oto_sigdir = bool(self.ayarlar.al("gövde_oto_sigdir", False))
+        self._gövde_oto_sigdir_degisken = tk.BooleanVar(value=self._gövde_oto_sigdir)
+        self._gövde_sigdir_zamanlandi = False
+        # Araç çubuğu gövdenin ÜSTÜNDE olmalı: pack sırası = ekrandaki sıra.
+        self._gövde_arac_kur(sag)
         if self.html_modu:
             # Gerçek HTML gösterimi (tkinterweb/Tkhtml3). script kapalı;
             # request_func ile dış kaynak istekleri engellenir.
+            # horizontal_scrollbar="auto": geniş içerik (geniş tablo, sabit
+            # aralıklı metin) görüntü alanından taşmasın, yatay kaydırma
+            # çubuğuyla erişilebilsin. (Önceden çubuk yoktu; sağa kaymış
+            # içeriğin bir kısmı hiç okunamıyordu.)
             self.ayrinti = HtmlFrame(
                 sag,
                 messages_enabled=False,
                 javascript_enabled=False,
                 forms_enabled=False,
                 objects_enabled=False,
+                horizontal_scrollbar="auto",
+                vertical_scrollbar="auto",
                 request_func=self._govde_istek,
             )
             self.ayrinti.pack(fill="both", expand=True, padx=8, pady=4)
             self.ayrinti.on_link_click = self._html_baglanti_tikla
+            self.ayrinti.bind("<Configure>", self._gövde_boyut_degisti)
         else:
             # width=40: PanedWindow'a talep edilen genislik; pencere acildiginda
             # fill/expand ile pano genisligine yayilir.
@@ -665,6 +683,13 @@ class Postacim(tk.Tk):
             self.ayrinti.tag_configure("resim_hata", foreground="#b3261e")
             self.ayrinti.bind("<Button-1>", self._ayrinti_tikla)
             self.ayrinti.bind("<Motion>", self._ayrinti_hareket)
+            self.ayrinti.bind("<Configure>", self._gövde_boyut_degisti)
+        # Klavye/tekerlek kısayolları
+        self.ayrinti.bind("<Control-MouseWheel>", self._gövde_tekerlek)
+        self.ayrinti.bind("<Control-Key-0>", lambda e: self._gövde_zoom_uygula(1.0))
+        self.ayrinti.bind("<Control-Key-minus>", lambda e: self._gövde_zoom_ayarla(self._gövde_zoom - 0.1))
+        self.ayrinti.bind("<Control-Key-equal>", lambda e: self._gövde_zoom_ayarla(self._gövde_zoom + 0.1))
+        self.bind("<Control-MouseWheel>", self._gövde_tekerlek)
         self.ek_cerçeve = ttk.LabelFrame(sag, text="Ekler", padding=4)
         self.ek_cerçeve.pack(fill="x", padx=6, pady=4)
         # Listbox ikon desteklemez; uzantı ikonları için Treeview kullanılır.
@@ -681,6 +706,166 @@ class Postacim(tk.Tk):
         self.defter.add(self.takvim_sayfa, text="  📅 Takvim  ")
         self._takvim_kur()
         self.defter.bind("<<NotebookTabChanged>>", self._sekme_degisti)
+
+    # ------------------------------------------------- gövde: zoom / sığdırma
+
+    GOVDE_ZOOM_MIN = 0.3
+    GOVDE_ZOOM_MAX = 3.0
+    # Otomatik sığdırmada alt sınır: yazı tipi çok küçülünce okunmaz olur.
+    # Bu sınırın altındaki içerikler yatay kaydırma çubuğuyla görülür.
+    GOVDE_SIGDIR_ZOOM_MIN = 0.5
+
+    def _gövde_arac_kur(self, ust: tk.Misc):
+        """Gövde için zoom araç çubuğunu kurar.
+
+        İçerik ekrandan geniş olduğunda mesajın sağa kaymış kısmı
+        okunamıyordu; araç çubuğu hem yatay kaydırmayı hem de
+        "genişliğe sığdır" işlemini sunar.
+        """
+        self.govde_arac = ttk.Frame(ust)
+        self.govde_arac.pack(fill="x", padx=6, pady=(2, 0))
+        ttk.Label(self.govde_arac, text="Gövde:").pack(side="left")
+        ttk.Button(
+            self.govde_arac, text="−", width=3,
+            command=lambda: self._gövde_zoom_ayarla(self._gövde_zoom - 0.1),
+        ).pack(side="left", padx=(6, 0))
+        self.zoom_etiket = ttk.Label(
+            self.govde_arac, text="100%", width=6, anchor="center"
+        )
+        self.zoom_etiket.pack(side="left", padx=2)
+        ttk.Button(
+            self.govde_arac, text="+", width=3,
+            command=lambda: self._gövde_zoom_ayarla(self._gövde_zoom + 0.1),
+        ).pack(side="left")
+        ttk.Button(
+            self.govde_arac, text="Sığdır",
+            command=lambda: self._gövde_sigdir(),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(
+            self.govde_arac, text="Genişliğe sığdır",
+            variable=self._gövde_oto_sigdir_degisken,
+            command=self._gövde_oto_sigdir_degisti,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Label(
+            self.govde_arac, text="Ctrl+tekerlek: yakınlaştır",
+            foreground="#666666",
+        ).pack(side="right", padx=(6, 0))
+
+    def _gövde_oto_sigdir_degisti(self):
+        """'Genişliğe sığdır' seçeneğini uygular ve kaydeder."""
+        self._gövde_oto_sigdir = bool(self._gövde_oto_sigdir_degisken.get())
+        self.ayarlar.ayarla("gövde_oto_sigdir", self._gövde_oto_sigdir)
+        self.ayarlar.kaydet()
+        if self._gövde_oto_sigdir:
+            self._gövde_sigdir()
+
+    def _gövde_zoom_ayarla(self, zoom: float):
+        """Yeni zoom değerini uygular (sınırlar içinde)."""
+        zoom = max(self.GOVDE_ZOOM_MIN, min(self.GOVDE_ZOOM_MAX, float(zoom)))
+        self._gövde_zoom_uygula(zoom)
+
+    def _gövde_zoom_uygula(self, zoom: float):
+        """Zoom'u gövdeye uygular ve etiketi günceller."""
+        self._gövde_zoom = float(zoom)
+        if self.html_modu:
+            try:
+                self.ayrinti.configure(zoom=self._gövde_zoom)
+            except tk.TclError:
+                pass
+        else:
+            # Metin modunda yazı tipi boyutu ölçeklenir.
+            try:
+                self.ayrinti.configure(font=("TkDefaultFont", int(10 * self._gövde_zoom)))
+            except tk.TclError:
+                pass
+        try:
+            self.zoom_etiket.configure(text=f"{int(round(self._gövde_zoom * 100))}%")
+        except tk.TclError:
+            pass
+
+    def _gövde_gorunur_oran(self) -> float | None:
+        """Gövdenin yatayda görünen oranı (0..1); taşma yoksa 1.0.
+
+        tkinterweb `xview()` gösterilen aralığı (ilk, son) verir. İçerik
+        görüntüden genişse oran 1'in altındadır.
+        """
+        html = getattr(self.ayrinti, "_html", None)
+        if html is None:
+            return None
+        try:
+            xview = html.xview()
+        except (tk.TclError, TypeError, ValueError):
+            return None
+        try:
+            if isinstance(xview, str):
+                parcalar = xview.split()
+                if len(parcalar) < 2:
+                    return None
+                ilk, son = float(parcalar[0]), float(parcalar[1])
+            else:
+                ilk, son = float(xview[0]), float(xview[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if son <= ilk:
+            return None
+        return max(0.0, min(1.0, son - ilk))
+
+    def _gövde_sigdir(self, _deneme: int = 0):
+        """Gövdeyi görüntü genişliğine sığdırır (zoom küçültülerek).
+
+        Tkhtml'in yerleşimi ölçümden sonra yeniden hesaplanır ve ölçekleme
+        tam doğrusal değildir; bu yüzden ölçüm birkaç tur tekrarlanır.
+        İçerik okunabilirliğin bozulacağı kadar küçültülemezse yatay
+        kaydırma çubuğu devreye girer.
+        """
+        if not self.html_modu:
+            return
+        try:
+            self.ayrinti.update_idletasks()
+            gorunum = self.ayrinti.winfo_width()
+        except tk.TclError:
+            return
+        if gorunum < 20:
+            return
+        oran = self._gövde_gorunur_oran()
+        if oran is None:
+            return
+        if oran >= 0.995:
+            if _deneme == 0:
+                self.durum.set("Gövde görüntü genişliğine sığdırıldı.")
+            return  # zaten sığıyor
+        yeni = max(self.GOVDE_SIGDIR_ZOOM_MIN, self._gövde_zoom * oran)
+        yeni = min(1.0, yeni)
+        if abs(yeni - self._gövde_zoom) < 0.01:
+            self.durum.set(
+                "Gövde ekrandan geniş — yatay kaydırma çubuğunu kullanın."
+            )
+            return
+        self._gövde_zoom_uygula(yeni)
+        if _deneme < 4:
+            self.after(80, lambda: self._gövde_sigdir(_deneme + 1))
+        else:
+            self.durum.set(
+                "Gövde ekrandan geniş — yatay kaydırma çubuğunu kullanın."
+            )
+
+    def _gövde_boyut_degisti(self, _olay=None):
+        """Gövde alanı yeniden boyutlandırıldığında (otomatik sığdırma açıksa)."""
+        if not self._gövde_oto_sigdir or self._gövde_sigdir_zamanlandi:
+            return
+        self._gövde_sigdir_zamanlandi = True
+        self.after(150, self._gövde_sigdir_zamanlandi_ekle)
+
+    def _gövde_sigdir_zamanlandi_ekle(self):
+        """Sığdırma zamanlamasını temizler ve sığdırmayı uygular."""
+        self._gövde_sigdir_zamanlandi = False
+        self._gövde_sigdir()
+
+    def _gövde_tekerlek(self, olay):
+        """Ctrl+tekerlek: gövdeyi yakınlaştırır/uzaklaştırır."""
+        adim = 0.1 if olay.delta > 0 else -0.1
+        self._gövde_zoom_ayarla(self._gövde_zoom + adim)
+        return "break"
 
     # ------------------------------------------------------------ Takvim
 
@@ -2372,6 +2557,12 @@ class Postacim(tk.Tk):
     def _bildirim_baslat(self):
         """Bildirim denetimini (her 60 sn) başlatır."""
         self._bildirim_durdur()
+        # Sistem balonları kapalıysa kullanıcıyı bilgilendir: bildirim
+        # gönderilse bile ekranda görünmeyecek.
+        if self._bildirim_acik and self._bildirim_balonlari_kapali():
+            self.durum.set(
+                "Sistem bildirim balonları kapalı — Ayarlar ▸ Genel'den açın"
+            )
         self._bildirim_zamanlayici = self.after(
             self._bildirim_aralik * 1000, self._bildirim_tik
         )
@@ -2496,24 +2687,156 @@ class Postacim(tk.Tk):
         if sayi <= onceki:
             return  # artış yok
         fark = sayi - onceki
-        self._bildirim_gonder(
-            f"Yeni e-posta — {ad}",
-            f"{fark} yeni mesaj",
-        )
+        baslik = f"Yeni e-posta — {ad}"
+        govde = f"{fark} yeni mesaj"
+        self._bildirim_gonder(baslik, govde)
+        # Durum çubuğu her zaman bildirir (sistem balonları kapalıysa bile).
+        self.durum.set(f"Yeni e-posta: {ad} — {fark} yeni mesaj")
+        # Uygulama içi uyarı: sistem bildirimleri kapalı olsa da görünür.
+        self._bildirim_toast(baslik, govde)
 
-    def _bildirim_gonder(self, baslik: str, govde: str):
-        """İşletim sistemi masaüstü bildirimi (notify-send)."""
-        if not self._bildirim_arac:
-            return  # notify-send yoksa sessizce geçilir
+    def _bildirim_simge_yolu(self) -> str:
+        """Bildirimde kullanılacak uygulama simgesinin yolu."""
+        import os
+
+        adaylar = [
+            os.path.join(os.path.dirname(__file__), "ikonlar", "uygulama.png"),
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "data", "icons", "hicolor", "scalable", "apps", "postacim.svg",
+            ),
+        ]
+        for yol in adaylar:
+            if os.path.isfile(yol):
+                return yol
+        return ""
+
+    def _bildirim_gonder(self, baslik: str, govde: str) -> bool:
+        """İşletim sistemi masaüstü bildirimi gönderir.
+
+        Önce `notify-send`; yoksa doğrudan D-Bus (`org.freedesktop.Notifications`).
+        Gönderilemezse uygulama içi uyarı devreye girer.
+        """
+        if not self._bildirim_acik:
+            return False
+        simge = self._bildirim_simge_yolu()
+        if self._bildirim_arac:
+            komut = [self._bildirim_arac, "-a", UYGULAMA_ADI, "-u", "normal"]
+            if simge:
+                komut += ["-i", simge]
+            komut += [baslik, govde]
+            try:
+                subprocess.Popen(
+                    komut,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            except OSError:
+                self._bildirim_arac = None
+        if self._bildirim_gdbus:
+            komut = [
+                self._bildirim_gdbus, "call", "--session",
+                "--dest", "org.freedesktop.Notifications",
+                "--object-path", "/org/freedesktop/Notifications",
+                "--method", "org.freedesktop.Notifications.Notify",
+                UYGULAMA_ADI, "0", simge, baslik, govde, "[]", "{}", "5000",
+            ]
+            try:
+                subprocess.Popen(
+                    komut,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            except OSError:
+                self._bildirim_gdbus = None
+        return False
+
+    def _bildirim_balonlari_kapali(self) -> bool:
+        """GNOME'da bildirim balonları kapalı mı?
+
+        `show-banners=false` iken bildirim gönderilse bile ekranda
+        görünmez; bu durumda kullanıcı "bildirim gelmiyor" sanar.
+        """
+        if self._bildirim_balon_durumu is None:
+            durum = False
+            arac = shutil.which("gsettings")
+            if arac:
+                try:
+                    cikti = subprocess.run(
+                        [
+                            arac, "get",
+                            "org.gnome.desktop.notifications", "show-banners",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    durum = cikti.stdout.strip().lower() == "false"
+                except (OSError, subprocess.SubprocessError):
+                    durum = False
+            self._bildirim_balon_durumu = durum
+        return self._bildirim_balon_durumu
+
+    def _bildirim_toast(self, baslik: str, govde: str):
+        """Uygulama içi geçici uyarı penceresi.
+
+        Sistem bildirim balonları kapalıyken de kullanıcıyı uyarmak için
+        pencerenin sağ altında kısa süreli bir uyarı gösterir.
+        """
         try:
-            subprocess.Popen(
-                [self._bildirim_arac, "-a", UYGULAMA_ADI, "-i", "mail-new",
-                 baslik, govde],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            if self._toast is not None and self._toast.winfo_exists():
+                self._toast.destroy()
+        except tk.TclError:
+            pass
+        try:
+            toast = tk.Toplevel(self)
+            self._toast = toast
+            toast.overrideredirect(True)
+            toast.attributes("-topmost", True)
+            cerceve = ttk.Frame(toast, padding=(14, 10), borderwidth=1, relief="solid")
+            cerceve.pack(fill="both", expand=True)
+            ttk.Label(
+                cerceve, text=baslik, font=("TkDefaultFont", 10, "bold")
+            ).pack(anchor="w")
+            ttk.Label(cerceve, text=govde).pack(anchor="w")
+            toast.bind("<Button-1>", lambda e: self._toast_kapat())
+            self.update_idletasks()
+            x = self.winfo_rootx() + self.winfo_width() - toast.winfo_reqwidth() - 30
+            y = self.winfo_rooty() + self.winfo_height() - toast.winfo_reqheight() - 50
+            toast.geometry(f"+{max(0, x)}+{max(0, y)}")
+            toast.after(6000, self._toast_kapat)
+        except tk.TclError:
+            self._toast = None
+
+    def _toast_kapat(self):
+        """Uygulama içi uyarı penceresini kapatır."""
+        try:
+            if self._toast is not None and self._toast.winfo_exists():
+                self._toast.destroy()
+        except tk.TclError:
+            pass
+        self._toast = None
+
+    def _bildirim_balonlarini_ac(self) -> bool:
+        """Sistem bildirim balonlarını açar (GNOME)."""
+        arac = shutil.which("gsettings")
+        if not arac:
+            return False
+        try:
+            subprocess.run(
+                [
+                    arac, "set",
+                    "org.gnome.desktop.notifications", "show-banners", "true",
+                ],
+                capture_output=True,
+                timeout=5,
             )
-        except OSError:
-            self._bildirim_arac = None
+        except (OSError, subprocess.SubprocessError):
+            return False
+        self._bildirim_balon_durumu = False
+        return True
 
     def _otomatik_isle(self, klasorler, mesajlar, toplam, diger=None):
         """Otomatik yenileme sonucu: listeler sessizce tazelenir."""
@@ -5280,6 +5603,58 @@ class AyarlarPenceresi(tk.Toplevel):
         )
         self._takvim_otomatik_degerler = takvim_degerler
 
+        # --- Bildirimler ---
+        ttk.Label(
+            sayfa, text="Bildirimler:", font=("TkDefaultFont", 10, "bold")
+        ).grid(row=4, column=0, sticky="w", pady=(18, 6))
+        self.bildirim_degisken = tk.BooleanVar(
+            value=bool(self.ana.ayarlar.al("bildirim", True))
+        )
+        ttk.Checkbutton(
+            sayfa,
+            text="Yeni e-posta geldiğinde uyarı göster",
+            variable=self.bildirim_degisken,
+        ).grid(row=5, column=0, columnspan=3, sticky="w")
+
+        self.balon_uyari = ttk.Label(
+            sayfa,
+            text="Sistem bildirim balonları kapalı — masaüstü uyarıları "
+                 "görünmeyebilir.",
+            foreground="#b3261e",
+            wraplength=420,
+        )
+        self.balon_uyari.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Button(
+            sayfa, text="Sistem bildirimlerini aç", command=self._balonlari_ac
+        ).grid(row=7, column=0, sticky="w", pady=(6, 0))
+        self._balon_uyarisini_guncelle()
+
+    def _balon_uyarisini_guncelle(self):
+        """Sistem balonlarının kapalı olup olmadığına göre uyarıyı gösterir."""
+        try:
+            if self.ana._bildirim_balonlari_kapali():
+                self.balon_uyari.configure(
+                    text="Sistem bildirim balonları kapalı — masaüstü uyarıları "
+                         "görünmeyebilir.",
+                    foreground="#b3261e",
+                )
+                self.balon_uyari.grid()
+            else:
+                self.balon_uyari.grid_remove()
+        except tk.TclError:
+            pass
+
+    def _balonlari_ac(self):
+        """GNOME'da bildirim balonlarını açar."""
+        if self.ana._bildirim_balonlarini_ac():
+            self._balon_uyarisini_guncelle()
+            self.ana.durum.set("Sistem bildirim balonları açıldı.")
+        else:
+            self.ana.durum.set(
+                "Bildirim balonları açılamadı — GNOME Ayarlar ▸ Bildirimler "
+                "üzerinden açabilirsiniz."
+            )
+
     # ------------------------------------------------------------ Takvim
 
     def _takvim_kur(self):
@@ -5466,6 +5841,17 @@ class AyarlarPenceresi(tk.Toplevel):
             if etiket == self.takvim_otomatik_degisken.get():
                 self.ana._takvim_otomatik_degistir(saniye)
                 break
+
+        # Bildirim tercihi
+        bildirim = bool(self.bildirim_degisken.get())
+        if bildirim != self.ana._bildirim_acik:
+            self.ana._bildirim_acik = bildirim
+            self.ana.ayarlar.ayarla("bildirim", bildirim)
+            self.ana.ayarlar.kaydet()
+            if bildirim:
+                self.ana.durum.set("Yeni e-posta uyarıları açıldı.")
+            else:
+                self.ana.durum.set("Yeni e-posta uyarıları kapatıldı.")
 
         # Takvim stili
         self.ana.takvim_stil = self.stil

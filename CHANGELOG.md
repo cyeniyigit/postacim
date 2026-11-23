@@ -3,6 +3,40 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.6] — 2026-11-23
+
+### Düzeltilen
+- **Başlatıcı, çalışan uygulama kapatıldığında yanlış uyarı veriyordu.**
+  Uygulama bir sinyal ile sonlandırıldığında (ör. kapatıldığında) artık
+  "Postacım başlatılamadı" iletişim kutusu gösterilmiyor; yalnızca gerçek
+  başlatma hatalarında gösteriliyor. Uzun süre çalışıp kapanan uygulamada
+  "beklenmeyen şekilde kapandı" başlığı kullanılır.
+- **Yeni e-posta geldiğinde işletim sistemi bildirimi çıkmıyordu.** Üç düzeltme:
+  - Bildirim artık uygulamanın kendi simgesiyle (`postacim`) gönderiliyor;
+    `notify-send` yoksa doğrudan D-Bus (`org.freedesktop.Notifications`)
+    üzerinden gönderilir.
+  - GNOME'da bildirim balonları kapalıyken (`show-banners=false`) uyarı
+    **hiç görünmüyordu**. Artık uygulama içinde geçici bir uyarı penceresi
+    (toast) gösterilir ve durum çubuğu da yeni postayı bildirir.
+  - Sistem balonları kapalıysa durum çubuğunda uyarı verilir; Ayarlar ▸
+    Genel'deki "Sistem bildirimlerini aç" düğmesi ayarı açar.
+- **Gövde içeriği sağa kayıyordu ve okunamıyordu.** Geniş içerikli
+  (geniş tablo, sabit aralıklı metin) postalarda içerik görüntü alanından
+  taşıyor, yatay kaydırma çubuğu da olmadığı için bir kısmı hiç
+  erişilemiyordu. Artık:
+  - Gövde alanında **yatay kaydırma çubuğu** var (`horizontal_scrollbar="auto"`).
+  - **"Sığdır"** düğmesi içeriği pencere genişliğine sığdırır (zoom).
+  - **"Genişliğe sığdır"** seçeneği açıkken pencere yeniden boyutlandırıldığında
+    içerik otomatik sığdırılır.
+  - Ctrl+tekerlek ile yakınlaştırma/uzaklaştırma, Ctrl+0 ile sıfırlama.
+
+### Eklenen
+- Ayarlar ▸ Genel ▸ Bildirimler: "Yeni e-posta geldiğinde uyarı göster"
+  seçeneği ve sistem bildirim balonlarını açma düğmesi.
+- `tests/bildirim_test.py` — bildirim karar mantığı, komut kurulumu ve
+  uygulama içi uyarı testleri.
+- `tests/govde_test.py` — yatay kaydırma çubuğu, sığdırma ve zoom testleri.
+
 ## [0.1.5] — 2026-11-23
 
 ### Düzeltilen

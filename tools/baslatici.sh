@@ -78,17 +78,30 @@ fi
 GECICI="$(mktemp 2>/dev/null || echo /tmp/postacim_hata_$$.txt)"
 trap 'rm -f "$GECICI" 2>/dev/null' EXIT
 
+BASLANGIC="$(date +%s)"
 "$VPY" -m "$AD" "$@" 2>"$GECICI"
 kod=$?
+SURE=$(( $(date +%s) - BASLANGIC ))
 
 if [ -s "$GECICI" ]; then
     cat "$GECICI" >> "$GUNLUK" 2>/dev/null || true
     [ -t 2 ] && cat "$GECICI" >&2
 fi
 
+# 128+n çıkış kodu: uygulama sinyal ile sonlandırıldı (ör. kapatıldı).
+# Bu bir başlatma hatası değildir; "başlatılamadı" uyarısı yanlış olur.
+if [ "$kod" -ge 128 ]; then
+    exit "$kod"
+fi
+
 if [ "$kod" -ne 0 ]; then
     ozet="$(tail -n 25 "$GECICI" 2>/dev/null)"
-    kutu_goster "Postacım başlatılamadı" "$(tani_yokla "$ozet")"
+    if [ "$SURE" -lt 5 ]; then
+        kutu_goster "Postacım başlatılamadı" "$(tani_yokla "$ozet")"
+    else
+        kutu_goster "Postacım beklenmeyen şekilde kapandı" \
+            "$(tani_yokla "$ozet")"
+    fi
 fi
 
 exit "$kod"
