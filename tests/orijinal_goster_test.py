@@ -189,10 +189,14 @@ def main() -> int:
         kontrol("ORIJINAL_GOVDE_ICERIK" in sayfa,
                 "orijinal gövde içeriği aynı alanda görünür")
         kontrol("kotu()" not in sayfa, "script metni gösterime sızmaz")
-        gomulu = [a for a in uygulama.ayrinti.image_names()
-                  if a.startswith("_tkinterweb") or a.startswith("govde_resim")]
-        kontrol(len(gomulu) >= 1,
-                f"cid resmi gövdeye gömüldü ({len(gomulu)} gömülü resim)")
+        # Gömme denetimi doğrudan üretilen HTML üzerinden yapılır
+        # (image_names sayımı kırık resimde de arttığı için yanıltıcıydı).
+        html = uygulama._orijinal_html(uygulama.secili)
+        kontrol("data:image/png;base64," in html,
+                "cid resmi orijinal HTML'e gömülür")
+        kontrol('src="cid:ii_1"' not in html, "cid adresi HTML'de kalmaz")
+        kontrol(uygulama._orijinal_basarisiz == [],
+                f"çözülemeyen resim yok ({uygulama._orijinal_basarisiz})")
         kontrol("Orijinal gösterim" in uygulama.durum.get(),
                 f"durum çubuğu orijinal modu bildirir ({uygulama.durum.get()!r})")
 
@@ -217,14 +221,10 @@ def main() -> int:
         uygulama.liste.selection_set(uygulama.liste.get_children()[2])
         uygulama.liste.event_generate("<<TreeviewSelect>>")
         bekle(uygulama, 2)
-        uygulama.orijinal_goster()
-        bekle(uygulama, 4)
-        gomulu = [a for a in uygulama.ayrinti.image_names()
-                  if a.startswith("_tkinterweb") or a.startswith("govde_resim")]
-        kontrol(len(gomulu) >= 1,
-                f"tek tırnak/büyük harf cid de gömülür ({len(gomulu)} gömülü)")
-        kontrol("ZORLU_CID_ICERIK" in uygulama.ayrinti.get_page_text(),
-                "zorlu mesajın içeriği görünür")
+        html = uygulama._orijinal_html(uygulama.secili)
+        kontrol("data:image/png;base64," in html,
+                "tek tırnak/büyük harf cid de gömülür")
+        kontrol("ZORLU_CID_ICERIK" in html, "zorlu mesajın içeriği görünür")
 
         # --- Hazırlama hatası: düğme sıfırlanır, durum bildirir ---
         uygulama.liste.selection_set(uygulama.liste.get_children()[0])

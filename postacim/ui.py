@@ -47,6 +47,7 @@ from .ews import (
     EwsYetkiHatasi,
     Mesaj,
     Randevu,
+    Resim,
     data_uri_verisi,
     govde_html_gosterim,
     html_metni,

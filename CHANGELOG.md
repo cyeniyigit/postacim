@@ -3,6 +3,19 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.25] — 2026-11-24
+
+### Düzeltilen
+- **Orijinal görünümde tüm resimlerin kırık kalmasının asıl nedeni
+  giderildi:** `ui.py`'de `Resim` sınıfı içe aktarım listesine
+  eklenmemişti; orijinal moddaki her resim çözümlemesi `NameError`
+  ile sessizce düşüyor (0.1.20'den beri). Artık satır içi (cid) ve
+  uzak resimler gerçekten gömülüyor.
+- Test: "gömüldü" denetimi, kırık resimde de artan tkinterweb dahili
+  adlarına dayandığı için yanıltıcıydı; artık üretilen HTML'de
+  `data:` URI'nin gerçekten var olduğu ve cid adresinin kalmadığı
+  doğrulanır, çözülemeyen resim kalmadığı da denetlenir.
+
 ## [0.1.24] — 2026-11-24
 
 ### Değiştirilen

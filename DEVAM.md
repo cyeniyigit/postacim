@@ -1622,3 +1622,28 @@ istisna yok → hatalar sessiz yutuluyor).
   kez deneyip bizim doğrudan okuyabileceğimiz gerçek teşhis verisi
   üretir. Durum çubuğunda "(N resim yüklenemedi)" sayısı sürer.
 - Testler: 15/15 geçti.
+
+
+## Kırık resimlerin asıl nedeni: eksik içe aktarım (2026-11-24)
+
+**Bildirim:** "yok hala aynı" (0.1.23 kurulu testte) → kurallar
+gereği tahmin bırakılıp 0.1.24'ün teşhis kaydı okundu:
+`orijinal.log` → `cid:ii_1 → NameError: name 'Resim' is not defined`.
+
+### Kök neden
+- `ui.py`'deki `.ews` içe aktarım listesinde `Resim` eksikti;
+  `_orijinal_html`'in `gom()`'i `Resim(kaynak=…)` anında NameError
+  fırlatıyor, `except Exception` bunu yutuyor, HER resim çözülemeden
+  kalıyordu. Hata 0.1.20'den beri sürüyordu; önceki "düzeltmeler"
+  (regex/UA) hiç çalıştırılmamıştı.
+- Testteki "gömüldü" denetimi de yanıltıcıydı: tkinterweb kırık
+  `<img>` için bile dahili görüntü adı ürettiğinden `image_names`
+  sayımı 1 gösteriyordu (yanlış-pozitif).
+
+### Düzeltmeler
+- `.ews` içe aktarımına `Resim` eklendi.
+- Test denetimi gerçek hale getirildi: `_orijinal_html` çıktısında
+  `data:image/png;base64,` var mı, `src="cid:ii_1"` kalmadı mı,
+  `_orijinal_basarisiz == []` mı — m1 ve zorlu m3 için.
+- Doğrulama: orijinal.log BOŞ (hiç çözülemedi kaydı yok); run_all.sh
+  15/15.
