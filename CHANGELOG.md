@@ -594,3 +594,12 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 - Sürüm 0.1.29: önceki yayınlanan etiket `v1.0.28` (koddaki 0.1.28 ile
   uyuşmadığı için güncelleme doğrulamada reddedilmişti). Bu sürümü
   almak için Release etiketi `v0.1.29` olmalıdır.
+
+## [0.1.30] — 2026-11-24
+
+### Eklenen
+- **"Mavi" teması:** Visual Studio tarzı koyu lacivert görünüm — lacivert
+  zemin (#0d2137), koyu mavi satır/paneller (#143653), mavi seçim vurgusu
+  (#2b6cb0). Ayarlar ▸ Genel'de Açık/Koyu seçeneklerinin yanında
+  "Mavi" seçeneği; takvim de koyu palete geçer. Tercih hesap.json'da
+  saklanır.

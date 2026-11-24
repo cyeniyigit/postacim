@@ -441,7 +441,8 @@ class Postacim(tk.Tk):
 
         # Tema widget'lar kurulmadan uygulanmali
         if sv_ttk is not None:
-            sv_ttk.set_theme(self.tema, self)
+            # "mavi" teması sv_ttk koyu taban + lacivert palet uygular
+            sv_ttk.set_theme("dark" if self.tema == "mavi" else self.tema, self)
         self.style = ttk.Style(self)
 
         # Karşılama penceresi (splash): arayüz kurulurken ve varsa güncelleme
@@ -556,6 +557,60 @@ class Postacim(tk.Tk):
 
         arka, on = self._tema_renkleri()
         vurgu = self._vurgu_rengi()
+        # "mavi" teması: Visual Studio tarzı koyu lacivert palet
+        # (sv_ttk koyu tabanının üzerine özel renkler uygulanır).
+        if self.tema == "mavi":
+            MAVI_ARKA = "#0d2137"
+            MAVI_ORTA = "#143653"
+            MAVI_METIN = "#e6eef7"
+            MAVI_VURGU = "#2b6cb0"
+            for ad, secenekler in (
+                ("TFrame", {"background": MAVI_ARKA}),
+                ("TLabel", {"background": MAVI_ARKA,
+                            "foreground": MAVI_METIN}),
+                ("TButton", {"background": MAVI_ORTA,
+                             "foreground": MAVI_METIN}),
+                ("TEntry", {"fieldbackground": MAVI_ORTA,
+                            "foreground": MAVI_METIN,
+                            "insertcolor": MAVI_METIN}),
+                ("TCombobox", {"fieldbackground": MAVI_ORTA,
+                               "foreground": MAVI_METIN,
+                               "background": MAVI_ORTA}),
+                ("TNotebook", {"background": MAVI_ARKA, "borderwidth": 0}),
+                ("TNotebook.Tab", {"background": MAVI_ORTA,
+                                   "foreground": MAVI_METIN,
+                                   "padding": (14, 6)}),
+                ("TPanedwindow", {"background": MAVI_ARKA}),
+                ("TLabelframe", {"background": MAVI_ARKA,
+                                 "foreground": MAVI_METIN}),
+                ("TLabelframe.Label", {"background": MAVI_ARKA,
+                                       "foreground": MAVI_METIN}),
+                ("TCheckbutton", {"background": MAVI_ARKA,
+                                  "foreground": MAVI_METIN}),
+                ("TRadiobutton", {"background": MAVI_ARKA,
+                                  "foreground": MAVI_METIN}),
+            ):
+                try:
+                    self.style.configure(ad, **secenekler)
+                except tk.TclError:
+                    pass
+            try:
+                self.style.configure(
+                    "Treeview", background=MAVI_ORTA,
+                    fieldbackground=MAVI_ARKA, foreground=MAVI_METIN)
+                self.style.map(
+                    "Treeview",
+                    background=[("selected", MAVI_VURGU)],
+                    foreground=[("selected", "#ffffff")])
+                self.style.map(
+                    "TButton", background=[("active", "#1b4a75")])
+                self.style.map(
+                    "TNotebook.Tab", background=[("selected", "#1b4a75")])
+                self.configure(background=MAVI_ARKA)
+            except tk.TclError:
+                pass
+            arka, on = MAVI_ARKA, MAVI_METIN
+            vurgu = MAVI_VURGU
         # Yalnız düz metin okuyucu (tk.Text) bu seçenekleri alır;
         # HtmlFrame'in böyle seçenekleri yok.
         if hasattr(self, "ayrinti") and not self.html_modu:
@@ -583,7 +638,7 @@ class Postacim(tk.Tk):
         if sv_ttk is None:
             messagebox.showinfo("Bilgi", "Tema paketi (sv-ttk) kurulu değil.")
             return
-        sv_ttk.set_theme(tema, self)
+        sv_ttk.set_theme("dark" if tema == "mavi" else tema, self)
         self.tema = tema
         self.ayarlar.ayarla("tema", tema)
         self.ayarlar.kaydet()
@@ -595,7 +650,8 @@ class Postacim(tk.Tk):
         # Takvim renkleri de temaya uysun (kullanıcı kendi stili seçmediyse)
         if not self._takvim_stil_ozel:
             varsayilan = (
-                TAKVIM_STIL_KOYU if tema == "dark" else TAKVIM_STIL_VARSAYILAN
+                TAKVIM_STIL_KOYU if tema in ("dark", "mavi")
+                else TAKVIM_STIL_VARSAYILAN
             )
             self.takvim_stil = {g: dict(varsayilan[g]) for g in varsayilan}
             if hasattr(self, "_gun_hucreleri"):
@@ -6712,7 +6768,8 @@ class AyarlarPenceresi(tk.Toplevel):
             row=0, column=0, sticky="w", pady=(0, 6)
         )
         self.tema_degisken = tk.StringVar(value=self.ana.tema)
-        for i, (deger, etiket) in enumerate((("light", "Açık"), ("dark", "Koyu"))):
+        for i, (deger, etiket) in enumerate(
+                (("light", "Açık"), ("dark", "Koyu"), ("mavi", "Mavi"))):
             ttk.Radiobutton(
                 sayfa, text=etiket, value=deger, variable=self.tema_degisken
             ).grid(row=0, column=1 + i, sticky="w", padx=(0, 12))

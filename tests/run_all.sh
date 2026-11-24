@@ -14,7 +14,7 @@ PY="${PY:-$KOK/.venv/bin/python}"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
 CALISTIR=""
-for t in coklu_hesap_test hesap_ui_test imap_yerel_sunucu_test ews_klasor_test silme_sayfa_test resim_test tekrar_test randevu_ekle_test bildirim_test govde_test dosya_secici_test ek_indir_test orijinal_goster_test guncelleme_test karsilama_test hava_test; do
+for t in coklu_hesap_test hesap_ui_test imap_yerel_sunucu_test ews_klasor_test silme_sayfa_test resim_test tekrar_test randevu_ekle_test bildirim_test govde_test dosya_secici_test ek_indir_test orijinal_goster_test guncelleme_test karsilama_test hava_test tema_test; do
     CALISTIR="$CALISTIR $DIZIN/$t.py"
 done
 

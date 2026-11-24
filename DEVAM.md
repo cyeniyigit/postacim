@@ -1775,3 +1775,23 @@ __version__ 0.1.28 olduğundan `kur()` doğrulaması
   yayın talimatı verildi (eski release+tag silinerek).
 - `guncelleme_test.py` mesajın ön ekini denetlediği için uyumlu;
   run_all.sh 16/16.
+
+
+## Visual Studio tarzı "Mavi" tema (2026-11-24)
+
+**Talep:** "birde visual studio da olduğu gibi koyu mavi tema ekleyelim"
+
+### Değişiklikler (`ui.py`)
+- Yeni tema değeri `"mavi"`: sv_ttk **koyu** tabanı üzerine lacivert
+  palet uygulanır (arka #0d2137, satır/panel #143653, metin #e6eef7,
+  vurgu #2b6cb0) — TFrame/TLabel/TButton/TEntry/TCombobox/TNotebook/
+  TLabelframe/TCheckbutton/TRadiobutton/Treeview + kök pencere zemini.
+- `_tema_degistir` ve açılış `sv_ttk.set_theme` çağrısı "mavi"→"dark"
+  eşlemesi yapar; takvim için "mavi" de TAKVIM_STIL_KOYU'nu alır.
+- Ayarlar ▸ Genel: tema radyo düğmelerine "Mavi" eklendi.
+
+### Testler (hepsi geçti)
+- `tests/tema_test.py` (yeni; run_all.sh'a eklendi): mavi tercihli
+  açılışta palet uygulanır (Treeview/kök/vurgu), light'a dönüş + tercih
+  kaydı, maviye geri dönüş, Ayarlar'da "Mavi" seçeneği.
+- `run_all.sh`: 17 test — hepsi geçti.
