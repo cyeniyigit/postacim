@@ -3,6 +3,18 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.22] — 2026-11-24
+
+### Düzeltilen
+- **Orijinal görünümde kırık resimler:** gövde HTML'indeki **tüm**
+  `<img src>` değerleri artık çözülür — `cid:` adresleri büyük/küçük
+  harf ve tırnak biçimi (tek/çift/çıplak) bağımsız eşleşir, `mesaj.resimler`
+  kaydı eksikse bile MIME/eklerden bulunur; uzak resimler kurum oturumuyla
+  (NTLM) indirilir. Pillow'un açamadığı veriler (SVG, bozuk baytlar) tüm
+  orijinal görünümü düşürmek yerine ham olarak doğru MIME türüyle gömülür;
+  hareketli GIF'ler ham gömülür (animasyon/şeffaflık korunur). `<base>`
+  etiketi de atılır.
+
 ## [0.1.21] — 2026-11-24
 
 ### Değiştirilen

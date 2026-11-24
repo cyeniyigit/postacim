@@ -80,6 +80,9 @@ class SahteIstemci:
             Mesaj(item_id="m2", konu="düz mesaj",
                   gonderen="ikinci@ornek.gov.tr", tarih="23.11.2026 09:00",
                   okundu=True, klasor=klasor, tariham="2026-11-23T09:00:00"),
+            Mesaj(item_id="m3", konu="zorlu cid",
+                  gonderen="ucuncu@ornek.gov.tr", tarih="22.11.2026 08:00",
+                  okundu=True, klasor=klasor, tariham="2026-11-22T08:00:00"),
         ]
         return ms[offset:offset + sayfa_boyutu], len(ms)
 
@@ -97,6 +100,14 @@ class SahteIstemci:
                 '<img src="cid:ii_1"><script>kotu()</script></body></html>'
             )
             mesaj.resimler = [Resim(ad="grafik.png", kaynak="cid:ii_1")]
+        elif mesaj.item_id == "m3":
+            # Zorlu durum: tek tırnak + büyük harf CID + resimler listesi boş
+            mesaj.govde = "Zorlu gövde"
+            mesaj.govde_html = (
+                '<html><body><p>ZORLU_CID_ICERIK</p>'
+                "<IMG border=0 SRC='CID:II_1'></body></html>"
+            )
+            mesaj.resimler = []
         else:
             mesaj.govde = "Düz metin gövde"
             mesaj.govde_html = ""
@@ -201,6 +212,19 @@ def main() -> int:
         kontrol("düz metin" in uygulama.durum.get(),
                 f"düz metin mesajda durum bilgilendirir ({uygulama.durum.get()!r})")
         kontrol(not uygulama._govde_orijinal, "düz metin mesajda mod değişmez")
+
+        # --- Zorlu cid: tek tırnak + büyük harf + resimler listesi boş ---
+        uygulama.liste.selection_set(uygulama.liste.get_children()[2])
+        uygulama.liste.event_generate("<<TreeviewSelect>>")
+        bekle(uygulama, 2)
+        uygulama.orijinal_goster()
+        bekle(uygulama, 4)
+        gomulu = [a for a in uygulama.ayrinti.image_names()
+                  if a.startswith("_tkinterweb") or a.startswith("govde_resim")]
+        kontrol(len(gomulu) >= 1,
+                f"tek tırnak/büyük harf cid de gömülür ({len(gomulu)} gömülü)")
+        kontrol("ZORLU_CID_ICERIK" in uygulama.ayrinti.get_page_text(),
+                "zorlu mesajın içeriği görünür")
 
         # --- Hazırlama hatası: düğme sıfırlanır, durum bildirir ---
         uygulama.liste.selection_set(uygulama.liste.get_children()[0])

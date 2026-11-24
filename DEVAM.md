@@ -1541,3 +1541,35 @@ açiyordu; doğrusu gövde alanının orijinal (işlenmemiş) HTML'e geçmesi.
   `content_id=` geçmek AttributeError + modal showerror + takılma
   üretti (faulthandler ile bulundu).
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## Orijinal görünümde kırık resimler (2026-11-24)
+
+**Bildirim:** "orjinalini göster dediğimde resimler doğru
+gösterilemiyor" — kırık resim ikonu (kullanıcı onayı).
+
+### Kök nedenler (`ui.py`)
+1. cid değiştirme yalnız `src="cid:…"` **çift tırnak + birebir** eşleşme
+   arıyordu; tek tırnak / `SRC='CID:…'` / boşluklu yazım kaçırıyordu.
+2. Çözümleme yalnız `mesaj.resimler` kayıtlarına bakıyordu; resimler
+   listesi eksikse HTML'deki cid src'ler çözülmüyordu.
+3. `_resim_data_uri` Pillow açamayan veride (SVG/bozuk) istisna
+   fırlatıp tüm orijinal görünümü düşürüyor (orijinal_hata) ve her
+   zaman `image/png` mime'ı kullanıyordu.
+
+### Düzeltmeler
+- `_orijinal_html`: HTML'deki **her** `<img src>` değeri regex ile
+  bulunup çözülür (cid/http/göreli; `&amp;` çözümü ile tekrar deneme);
+  değişim de regex tabanlı (`src\s*=` — tırnak tipi bağımsız; yalnız
+  çözülenler değişir). cid eşleşmesinde küçük harf denemesi ekli
+  (`cid:II_1` → MIME `Content-ID: <ii_1>`).
+- `<base>` etiketi de atılır (göreli adresler zaten engelli).
+- Yeni `_veri_mime`: bayt imzasından MIME (PNG/JPEG/GIF/BMP/WEBP/ICO/SVG).
+- `_resim_data_uri`: GIF/SVG ham gömülür (animasyon/vektör bozulmasın);
+  Pillow yoksa/açamazsa ham baytlar doğru mime ile gömülür — istisna
+  tüm gösterimi düşürmez.
+
+### Testler (hepsi geçti)
+- `tests/orijinal_goster_test.py`'a m3: tek tırnak + `CID:II_1` büyük
+  harf + boş `resimler` listesi → resim gömülür, içerik görünür.
+- `run_all.sh`: 15 test — hepsi geçti.

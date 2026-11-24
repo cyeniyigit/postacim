@@ -3873,32 +3873,60 @@ class Postacim(tk.Tk):
             pass
         return url, b"", "text/html", 404
 
+    @staticmethod
+    def _veri_mime(veri: bytes) -> str:
+        """Bayt imzasından resim MIME türünü tahmin eder."""
+        if veri.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if veri.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if veri.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif"
+        if veri.startswith(b"BM"):
+            return "image/bmp"
+        if veri[:4] == b"RIFF" and veri[8:12] == b"WEBP":
+            return "image/webp"
+        if veri.startswith(b"\x00\x00\x01\x00"):
+            return "image/x-icon"
+        bas = veri.lstrip()[:200].lower()
+        if b"<svg" in bas:
+            return "image/svg+xml"
+        return "application/octet-stream"
+
     def _resim_data_uri(self, veri: bytes) -> str:
         """Resim baytlarını gövdeye gömülecek `data:` URI'ye çevirir.
 
-        Pillow varsa büyük resimler küçültülür ve PNG'ye çevrilir; yoksa
-        ham veri gömülür (Tk'ın kendi PNG/GIF desteğiyle açılır).
+        Pillow varsa büyük resimler küçültülür ve PNG'ye çevrilir;
+        Pillow yoksa ya da resim açılamazsa (SVG/bozuk veri) ham baytlar
+        doğru MIME ile gömülür. Hareketli GIF'ler ham gömülür.
         """
+        mime = self._veri_mime(veri)
+        if mime in ("image/gif", "image/svg+xml"):
+            return f"data:{mime};base64," + base64.b64encode(veri).decode("ascii")
         try:
             from PIL import Image
         except ImportError:
-            return "data:image/png;base64," + base64.b64encode(veri).decode("ascii")
-        resim = Image.open(io.BytesIO(veri))
-        resim.load()
-        if resim.mode not in ("RGB", "RGBA", "P", "L"):
-            resim = resim.convert("RGB")
-        genislik = self.ayrinti.winfo_width() - 28
-        genislik = max(240, min(genislik, 900))
-        if resim.width > genislik:
-            oran = genislik / resim.width
-            resim = resim.resize(
-                (genislik, max(1, int(resim.height * oran))), Image.LANCZOS
-            )
-        tampon = io.BytesIO()
-        resim.save(tampon, "PNG")
-        return "data:image/png;base64," + base64.b64encode(
-            tampon.getvalue()
-        ).decode("ascii")
+            return f"data:{mime};base64," + base64.b64encode(veri).decode("ascii")
+        try:
+            resim = Image.open(io.BytesIO(veri))
+            resim.load()
+            if resim.mode not in ("RGB", "RGBA", "P", "L"):
+                resim = resim.convert("RGB")
+            genislik = self.ayrinti.winfo_width() - 28
+            genislik = max(240, min(genislik, 900))
+            if resim.width > genislik:
+                oran = genislik / resim.width
+                resim = resim.resize(
+                    (genislik, max(1, int(resim.height * oran))), Image.LANCZOS
+                )
+            tampon = io.BytesIO()
+            resim.save(tampon, "PNG")
+            return "data:image/png;base64," + base64.b64encode(
+                tampon.getvalue()
+            ).decode("ascii")
+        except Exception:
+            # Pillow açamadı (bozuk/exotic veri): ham baytları göm
+            return f"data:{mime};base64," + base64.b64encode(veri).decode("ascii")
 
     def _resim_cubugunu_guncelle(self):
         toplam = len(self.resim_kayitlari)
@@ -4665,36 +4693,63 @@ class Postacim(tk.Tk):
     def _orijinal_html(self, mesaj: Mesaj) -> str:
         """Mail'in gönderildiği hali andıran HTML'i üretir.
 
-        - Satır içi (cid) ve uzak (http/https) resimler indirilip `data:`
-          URI olarak gövdeye gömülür; indirilemeyen resim olduğu gibi kalır.
-        - `script` ile yönlendiren `meta` atılır (Tkhtml zaten çalıştırmaz;
-          metne karışmasın), kapanmamış etiket / iç içe tablo onarımı
-          korunur (Tkhtml3 çökmesin).
+        - HTML'deki **her** `<img src>` değeri çözülmeye çalışılır: satır
+          içi (cid, büyük/küçük harf ve tırnak biçimi bağımsız), uzak
+          (http/https) ve göreli adresler → `data:` URI gömülür. Çözülemeyen
+          resim orijinalde olduğu gibi kalır.
+        - `script`, yönlendiren `meta` ve `base` etiketleri atılır
+          (göreli adresler zaten yüklenemez); kapanmamış etiket / iç içe
+          tablo onarımı korunur (Tkhtml3 çökmesin).
         """
         govde = (mesaj.govde_html or "").strip()
+        gomuler = self._orijinal_gomuler  # adres (ham + küçük harf) → data uri
 
-        def gom(adres: str) -> None:
-            if not adres or adres in self._orijinal_gomuler:
+        def gom(adres: str | None) -> None:
+            if not adres:
                 return
-            try:
-                veri = resim_verisi(self.istemci, mesaj, Resim(kaynak=adres))
-            except Exception:
-                return  # çözülemeyen resim orijinalde olduğu gibi kalır
-            if veri:
-                self._orijinal_gomuler[adres] = self._resim_data_uri(veri)
+            adres = adres.strip()
+            if not adres or adres.lower().startswith("data:"):
+                return  # zaten gömülü
+            if any(a in gomuler for a in (adres, adres.lower())):
+                return
+            denemeler = [adres, html_mod.unescape(adres)]
+            if adres.lower().startswith("cid:"):
+                denemeler.append("cid:" + adres[4:].lower())
+            for deneme in denemeler:
+                try:
+                    veri = resim_verisi(self.istemci, mesaj, Resim(kaynak=deneme))
+                except Exception:
+                    continue
+                if veri:
+                    uri = self._resim_data_uri(veri)
+                    for a in {adres, adres.lower()}:
+                        gomuler[a] = uri
+                    return
 
+        # 1) Mesajın resim kayıtları + HTML'deki tüm src adresleri
         for resim in mesaj.resimler or []:
             gom(resim.kaynak)
         for adres in re.findall(
-            r'(?is)<img\b[^>]*\bsrc\s*=\s*["\'](https?://[^"\']+)["\']', govde
+            r'(?is)<img\b[^>]*?\bsrc\s*=\s*["\']?([^"\'>\s]+)', govde
         ):
             gom(adres)
-        for adres, uri in self._orijinal_gomuler.items():
-            govde = govde.replace(f'"{adres}"', f'"{uri}"')
-            govde = govde.replace(f"'{adres}'", f"'{uri}'")
+
+        # 2) Çözülen adresleri src değerleriyle değiştir (tırnak tipi bağımsız)
+        src_duzen = re.compile(
+            r'(?is)(src\s*=\s*)("([^"]*)"|\'([^\']*)\'|([^\s>]+))')
+
+        def src_yerine(m):
+            deger = m.group(3) or m.group(4) or m.group(5) or ""
+            uri = gomuler.get(deger) or gomuler.get(deger.lower())
+            if not uri:
+                return m.group(0)  # çözülemeyen resim orijinalde olduğu gibi
+            return f'{m.group(1)}"{uri}"'
+
+        govde = src_duzen.sub(src_yerine, govde)
         govde = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", " ", govde)
         govde = re.sub(r"(?is)<script\b[^>]*/>", " ", govde)
         govde = re.sub(r"(?is)<meta\b[^>]*http-equiv[^>]*>", " ", govde)
+        govde = re.sub(r"(?is)<base\b[^>]*>", " ", govde)
         govde = html_taglari_kapat(govde)
         govde = html_tablolar_onar(govde)
         return _GOSTERIM_STILI + govde
