@@ -3,6 +3,13 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.20] — 2026-11-24
+
+### Eklenen
+- Sürüm numarası artık ana pencerenin başlık çubuğunda da görünür
+  ("Postacım 0.1.20 — Hesap Adı") — güncelleme sonrası yeni sürümün
+  çalıştığı tek bakışta anlaşılır.
+
 ## [0.1.19] — 2026-11-24
 
 ### Değiştirilen

@@ -463,7 +463,8 @@ class Postacim(tk.Tk):
 
     def _baslik_metni(self, hesap: dict) -> str:
         ad = (hesap or {}).get("ad") or (hesap or {}).get("kullanici")
-        return f"{UYGULAMA_ADI} — {ad}" if ad else UYGULAMA_ADI
+        surumlu = f"{UYGULAMA_ADI} {SURUM}"
+        return f"{surumlu} — {ad}" if ad else surumlu
 
     # ------------------------------------------------------------ arayüz kurulumu
 
