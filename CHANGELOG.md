@@ -3,7 +3,7 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
-## [0.1.18] — 2026-11-24
+## [0.1.19] — 2026-11-24
 
 ### Değiştirilen
 - **Açılışta güncelleme varken ana pencere artık açılmaz:** uygulama
@@ -13,6 +13,8 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   "Yeniden Başlat" demek zorunda kalmaz. Güncelleme yoksa (ya da
   denetlenemezse/kurulamazsa) uygulama her zamanki gibi açılır; kurulama
   hatasında karşılama penceresinde "Devam Et" düğmesi sunulur.
+
+## [0.1.18] — 2026-11-24
 
 ### Düzeltilen
 - **Karşılama penceresi çift monitörde ortalanıyor:** pencere artık tüm
