@@ -3,6 +3,7 @@
 
 Kapsar:
 - Açılışta karşılama penceresi: logo, ad, sürüm, ekran ortası
+- Çift monitör: uygulamanın çalıştığı monitöre ortalama (xrandr çözümü)
 - Durum metni + ilerleme çubuğu (%)
 - "guncelleme_durum" kuyruk sonucu pencereyi günceller
 - "guncelleme_bitti" → %100 + Yeniden Başlat/Kapat düğmeleri
@@ -132,6 +133,32 @@ def main() -> int:
                     f"sürüm etiketi ({beklenen})")
             geo = k.geometry()
             kontrol("+" in geo, f"ekran ortası konumu ({geo})")
+
+            # --- çift monitör: doğru monitöre ortalama ---
+            ornek = ("DP-1 connected primary 1920x1080+0+0 (normal) 527mm x 296mm\n"
+                     "HDMI-0 connected 1920x1080+1920+0 (normal) 527mm x 296mm\n"
+                     "eDP-1 disconnected (normal)\n")
+            kontrol(ui_mod._xrandr_coz(ornek) ==
+                    [(0, 0, 1920, 1080), (1920, 0, 1920, 1080)],
+                    "xrandr çözümlemesi iki monitörü buldu")
+            kontrol(ui_mod._xrandr_coz("") == [], "boş xrandr çıktısı → []")
+            kontrol(ui_mod._monit_sec(
+                [(0, 0, 1920, 1080), (1920, 0, 1920, 1080)], 2500, 300)
+                == (1920, 0, 1920, 1080), "nokta sağ monitörde seçildi")
+            kontrol(ui_mod._monit_sec(
+                [(0, 0, 1920, 1080)], 2500, 300) is None,
+                "monitör dışındaki nokta None")
+            eski_hedef = k._hedef_monit_or
+            k._hedef_monit_or = lambda: (1920, 0, 1920, 1080)
+            k._ortala()
+            k._hedef_monit_or = eski_hedef
+            geo = k.geometry()
+            try:
+                konum_x = int(geo.split("+")[1])
+            except (IndexError, ValueError):
+                konum_x = -1
+            kontrol(konum_x >= 1920,
+                    f"sağ monitöre ortalandı ({geo})")
 
         # --- ilk klasör listesi gelince pencere kapanır ---
         bekle(uygulama, 3)

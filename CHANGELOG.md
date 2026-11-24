@@ -3,6 +3,19 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.18] — 2026-11-24
+
+### Düzeltilen
+- **Karşılama penceresi çift monitörde ortalanıyor:** pencere artık tüm
+  ekranın (iki monitörün birleşiminin) değil, **uygulamanın çalıştığı
+  monitörün** ortasında açılıyor. Monitör dikdörtgenleri `xrandr`'dan
+  çözülür; referans nokta ana pencerenin merkezi (görünürse), değilse
+  imleç konumudur (başlatıcının tıklandığı monitör). Monitör listesi
+  alınamazsa eski davranış (tüm ekranın ortası) korunur; her hata
+  yutulur, karşılama penceresi asla sorun çıkarmaz.
+- Güncelleme kurulunca çıkan "Yeniden Başlat/Kapat" düğmeleri pencereyi
+  uzattığı için pencere yeniden ölçülüp yeniden ortalanıyor.
+
 ## [0.1.17] — 2026-11-24
 
 ### Eklenen

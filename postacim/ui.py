@@ -138,12 +138,52 @@ TAKVIM_STIL_KOYU: dict = {
 }
 
 
+def _xrandr_coz(cikti: str) -> list[tuple[int, int, int, int]]:
+    """xrandr çıktısından bağlı monitör dikdörtgenlerini çözümler."""
+    desen = re.compile(
+        r"^\S+ connected\s+(?:primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+)", re.M)
+    monit_orlar = []
+    for eslesme in desen.finditer(cikti):
+        gen, yuk, x, y = (int(g) for g in eslesme.groups())
+        if gen > 0 and yuk > 0:
+            monit_orlar.append((x, y, gen, yuk))
+    return monit_orlar
+
+
+def _xrandr_monit_orlari() -> list[tuple[int, int, int, int]]:
+    """Bağlı monitör dikdörtgenleri [(x, y, gen, yüksek)]; yoksa [].
+
+    xrandr sorgulanır (X11). Wayland/xrandr olmayan ortamlarda boş döner
+    — çağıran tek ekran varsayımına düşer. Her hata yutulur: karşılama
+    penceresi asla monitör tespiti yüzünden sorun çıkarmamalı.
+    """
+    try:
+        islem = subprocess.run(
+            ["xrandr", "--current", "--query"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if islem.returncode == 0:
+            return _xrandr_coz(islem.stdout)
+    except Exception:
+        pass
+    return []
+
+
+def _monit_sec(monit_orlar, x: int, y: int):
+    """Verilen noktayı içeren monitör dikdörtgeni; hiçbiri içermiyorsa None."""
+    for mx, my, mg, myuk in monit_orlar or []:
+        if mx <= x < mx + mg and my <= y < my + myuk:
+            return (mx, my, mg, myuk)
+    return None
+
+
 class Karsilama(tk.Toplevel):
     """Açılış karşılama penceresi (Outlook/Anaconda tarzı).
 
     Uygulama simgesi + ad + sürüm; alt kısımda başlatma/güncelleme
-    durumu ve **ilerleme çubuğu** (%). Kenarlığı yok, ekranın ortasında
-    durur; uygulama hazır olunca (ya da güncelleme biterken) kapatılır.
+    durumu ve **ilerleme çubuğu** (%). Kenarlığı yok, uygulamanın
+    çalıştığı monitörün ortasında durur; uygulama hazır olunca (ya da
+    güncelleme biterken) kapatılır.
     """
 
     ARKA = "#0f3c66"
@@ -192,15 +232,39 @@ class Karsilama(tk.Toplevel):
         self.cubuk.pack(fill="x", pady=(10, 2))
         self.dugme_cubugu = tk.Frame(govde, bg=self.ARKA)
         self.dugme_cubugu.pack(pady=(8, 0))
+        self._monit_onbellek = None  # xrandr bir kez sorgulanır
         # Konum + üstte kalma: haritalanma sırasında ana pencere üstüne
         # çıkabildiği için birkaç kez yeniden uygulanır (bkz. _ortala).
         self.after(20, self._ortala)
         self.after(300, self._ortala)
         self.after(800, self._ortala)
 
-    def _ortala(self):
-        """Pencereyi ekranın ortasına yerleştirir (Anaconda tarzı).
+    def _hedef_monit_or(self):
+        """Uygulamanın çalıştığı monitörün (x, y, gen, yüksek) dikdörtgeni.
 
+        Ana pencere görünürse onun merkezi, değilse **imleç konumu**
+        referanstır (başlatıcıya tıklanan monitör). Monitör listesi
+        alınamıyorsa None — çağıran tüm ekran ortasına düşer.
+        """
+        try:
+            if self.ana.winfo_viewable() and self.ana.winfo_width() > 1:
+                x = self.ana.winfo_x() + self.ana.winfo_width() // 2
+                y = self.ana.winfo_y() + self.ana.winfo_height() // 2
+            else:
+                x, y = self.winfo_pointerx(), self.winfo_pointery()
+        except tk.TclError:
+            return None
+        if self._monit_onbellek is None:
+            self._monit_onbellek = _xrandr_monit_orlari()
+        return _monit_sec(self._monit_onbellek, x, y)
+
+    def _ortala(self):
+        """Pencereyi uygulamanın çalıştığı monitörün ortasına yerleştirir.
+
+        Çift monitörlü kurulumlarda tüm ekranın ortası (winfo_screenwidth)
+        iki monitörün arasına denk gelir; bu yüzden önce monitör
+        tespit edilir, ortalaması ona göre yapılır. Monitör listesi
+        alınamazsa eski davranış (tüm ekranın ortası) korunur.
         Konum Xvfb/bazı pencerelerde haritalanma sırasında sıfırlanabildiği
         için üstte kalma (lift) yalnız pencere **görünürken** yapılır.
         """
@@ -208,8 +272,14 @@ class Karsilama(tk.Toplevel):
             self.update_idletasks()
             genislik = self.winfo_reqwidth() or 440
             yukseklik = self.winfo_reqheight() or 330
-            x = max(0, (self.winfo_screenwidth() - genislik) // 2)
-            y = max(0, (self.winfo_screenheight() - yukseklik) // 2 - 40)
+            dikt = self._hedef_monit_or()
+            if dikt:
+                mx, my, mg, myuk = dikt
+                x = mx + max(0, (mg - genislik) // 2)
+                y = my + max(0, (myuk - yukseklik) // 2 - 40)
+            else:
+                x = max(0, (self.winfo_screenwidth() - genislik) // 2)
+                y = max(0, (self.winfo_screenheight() - yukseklik) // 2 - 40)
             if self.geometry() != f"{genislik}x{yukseklik}+{x}+{y}":
                 self.geometry(f"{genislik}x{yukseklik}+{x}+{y}")
             if self.winfo_viewable():
@@ -244,6 +314,7 @@ class Karsilama(tk.Toplevel):
             self.dugme_cubugu, text="Kapat",
             command=self.kapat,
         ).pack(side="left", padx=4)
+        self.after(50, self._ortala)  # düğmeler pencereyi uzatır; yeniden ortala
 
     def kapat(self):
         try:

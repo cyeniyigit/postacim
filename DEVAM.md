@@ -1407,3 +1407,46 @@ yapmadığı, neyi güncellediği ve % kaçının tamamlandığı gösterilmeli.
   `_guncelleme_kurulu`, hata metni, elle denetim akışı (sahte modül ile
   indirme-kurulum ve yeniden başlatma sorusu).
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## Çift monitörde karşılama ortalaması (2026-11-24)
+
+**Talep:** "programın çalıştığı monitörü tespit etmesi ve o monitörün
+ortasında güncelleme ui penceresini açması gerekir" — çift monitörlü
+kurulumda karşılama penceresi iki monitörün ortasına (bezin ortasına)
+düşüyordu.
+
+### Değişiklikler (`ui.py`)
+- `_xrandr_coz(çıktı)`: xrandr çıktısından bağlı monitör dikdörtgenlerini
+  (`(x, y, gen, yüksek)`) çözümler (saf fonksiyon, test edilebilir).
+- `_xrandr_monit_orlari()`: `xrandr --current --query` çalıştırır;
+  **her hata yutulur** (Wayland/xrandr yok/bozuk → `[]`), karşılama
+  penceresi asla monitör tespiti yüzünden sorun çıkarmaz.
+- `_monit_sec(monit_orlar, x, y)`: noktayı içeren dikdörtgeni seçer.
+- `Karsilama._hedef_monit_or`: referans nokta ana pencerenin merkezi
+  (görünürse), değilse **imleç konumu** (başlatıcının tıklandığı
+  monitör); sonuç `_monit_onbellek`'e alınır (xrandr açılışta 1 kez).
+- `_ortala`: hedef monitör bulunduysa o monitörün ortasına (+ üst
+  boşluk −40px), bulunamadıysa eski davranış (tüm ekranın ortası).
+- `bitti`: düğmeler pencereyi uzattığı için 50 ms sonra yeniden
+  `_ortala` (pencere yeniden ölçülür ve ortalanır).
+
+### Testler (hepsi geçti)
+- `tests/karsilama_test.py`'a eklendi: xrandr çözümü (2 monitör + boş
+  çıktı), `_monit_sec` (sağ monitör + monitör dışı → None), sahte
+  `(1920, 0, 1920, 1080)` dikdörtgeniyle `_ortala` → pencere x ≥ 1920.
+- Ara bulgu: ilk denemede `_xrandr_monit_orlari` içinde
+  `islem.ok` hatası (CompletedProcess'te yok) `after` geri çağrısında
+  AttributeError → `_tk_hata_yakala` başsız ortamda **modal showerror**
+  açıp testi sonsuza kadar blokluyordu (hata.log'a bakılıyor;
+  faulthandler.dump_traceback_later ile teşhis edildi). Düzeltildi
+  (`returncode == 0`) ve çözümleyici istisnasız hale getirildi.
+- `run_all.sh`: 15 test — hepsi geçti.
+
+### Güncelleme testi notu (kullanıcı akışı)
+- GitHub Releases'ta yayınlanan sürüm hâlâ v0.1.6 (v0.1.7 taslakta kalmış
+  ya da yayınlanmamış); `main`'deki `__version__` 0.1.17 → güncelleyici
+  doğru şekilde "yeni sürüm yok" diyor. Test için: GitHub'da
+  `__version__ = "0.1.18"` işlemesi + **v0.1.18** etiketiyle Release
+  yayınlanmalı (tag ile `__version__` eşleşmeli — `kur()` doğruluyor).
+  Kurulu uygulama (0.1.17) açılışta bu sürümü indirip kurar.
