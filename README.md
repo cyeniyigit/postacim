@@ -24,6 +24,8 @@ genişletilerek her tekrarı ayrı ayrı gösterilir:
 
 ![Takvim ekranı](belge/ekran-takvim.png)
 
+![Ayarlar ekranı](belge/ekran-ayarlar.png)
+
 > Ekran görüntüleri **sentetik** verilerle alınmıştır; gerçek mesaj,
 > hesap veya takvim bilgisi içermez.
 

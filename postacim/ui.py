@@ -488,7 +488,8 @@ class Postacim(tk.Tk):
         kayitli_stil = self.ayarlar.al("takvim_stil", None)
         self._takvim_stil_ozel = bool(kayitli_stil)  # kullanıcı kendi stili seçti mi
         varsayilan = (
-            TAKVIM_STIL_KOYU if self.tema == "dark" else TAKVIM_STIL_VARSAYILAN
+            TAKVIM_STIL_KOYU if self.tema in ("dark", "mavi")
+            else TAKVIM_STIL_VARSAYILAN
         )
         self.takvim_stil: dict = {
             g: {**varsayilan[g], **(kayitli_stil or {}).get(g, {})}
