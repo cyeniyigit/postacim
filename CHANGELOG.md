@@ -581,3 +581,16 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   MIME içeriğinden ayrılır)
 - OWA tarayıcı dışından kullanılamayan sunucularda web arayüzüne geçilemez
 - Arama istemci tarafındadır (büyük klasörlerde yavaşlayabilir)
+
+## [0.1.29] — 2026-11-24
+
+### Düzeltilen
+- Güncelleme doğrulama hatası artık nedeni açıkça söyler: kurulan sürüm
+  beklenenden farklıysa "Release etiketi ile koddaki __version__
+  uyuşmuyor" ipucu da gösterilir (v1.0.28 gibi etiket/kod uyumsuzluğu
+  sık karşılaşılan bir durumdur).
+
+### Not
+- Sürüm 0.1.29: önceki yayınlanan etiket `v1.0.28` (koddaki 0.1.28 ile
+  uyuşmadığı için güncelleme doğrulamada reddedilmişti). Bu sürümü
+  almak için Release etiketi `v0.1.29` olmalıdır.

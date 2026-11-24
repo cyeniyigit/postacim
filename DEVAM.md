@@ -1757,3 +1757,21 @@ olsun, Nem ve Rüzgâr da görünsün.
   doldurma ve `hava_ilceler` kuyruk sonucuyla ilçe doldurma (geri dönüş
   denetimi); hata sonrası nötr panel.
 - `run_all.sh`: 16 test — hepsi geçti.
+
+
+## Güncelleme doğrulama hatası: etiket/sürüm uyumsuzluğu (2026-11-24)
+
+**Bildirim:** "güncelleme başarısız hatası alıyorum" — kurulu 0.1.28;
+yayınlanan Release etiketi **v1.0.28** (yanlışlıkla 1.0.x yazılmış).
+Güncelleyici (1,0,28) > (0,1,28) sanıp indirip kuruyor; arşivdeki
+__version__ 0.1.28 olduğundan `kur()` doğrulaması
+"0.1.28 ≠ 1.0.28" ile reddediyor — beklenen davranış.
+
+### Düzeltmeler
+- `guncelleme.py::kur`: doğrulama hatası artık ipucu içerir
+  ("Release etiketi ile koddaki __version__ uyuşmuyor — etiketi koddaki
+  sürümle aynı numarayla yeniden yayınlayın").
+- Sürüm 0.1.29'a yükseltildi; kullanıcıya v0.1.29 etiketiyle yeniden
+  yayın talimatı verildi (eski release+tag silinerek).
+- `guncelleme_test.py` mesajın ön ekini denetlediği için uyumlu;
+  run_all.sh 16/16.

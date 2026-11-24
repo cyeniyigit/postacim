@@ -204,7 +204,10 @@ def kur(
     kurulan = _venv_surum(vpy)
     if kurulan != hedef_surum:
         raise GuncellemeHatasi(
-            f"Doğrulama başarısız: {kurulan} ≠ {hedef_surum}"
+            f"Doğrulama başarısız: kurulan {kurulan} ≠ beklenen "
+            f"{hedef_surum} (GitHub Release etiketi ile koddaki "
+            "__version__ uyuşmuyor — etiketi koddaki sürümle aynı "
+            "numarayla yeniden yayınlayın)"
         )
     asama("Güncelleme tamamlandı", 100)
     return kurulan
