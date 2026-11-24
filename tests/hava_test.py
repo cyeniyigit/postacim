@@ -204,10 +204,10 @@ def main() -> int:
     try:
         bekle(uygulama, 3)
 
-        # --- üst çubukta hava göstergesi var, kaldırılan düğmeler yok ---
-        kontrol(getattr(uygulama, "hava_gosterge", None) is not None and
-                uygulama.hava_gosterge.winfo_exists(),
-                "üst çubukta hava göstergesi var")
+        # --- üst çubukta hava paneli var, kaldırılan düğmeler yok ---
+        kontrol(getattr(uygulama, "hava_paneli", None) is not None and
+                uygulama.hava_paneli.winfo_exists(),
+                "üst çubukta hava paneli var")
         arac_textleri = []
         for cocuk in uygulama.winfo_children():
             for torun in cocuk.winfo_children():
@@ -224,13 +224,16 @@ def main() -> int:
                 "Temizle" in arac_textleri,
                 "Yeni e-posta ve Temizle çubukta duruyor")
 
-        # --- kuyruk sonucu göstergayı günceller ---
+        # --- kuyruk sonucu paneli günceller ---
         uygulama._sonuc_isle(("hava", "İstanbul", "Bakırköy", MERKEZ,
                               SONDURUM[0], TAHMIN[0]))
-        metin = uygulama.hava_gosterge.cget("text")
+        metin = uygulama.hava_baslik.cget("text")
         kontrol("Bakırköy" in metin and "6.1" in metin,
-                f"gösterge anlık sıcaklığı gösterir ({metin!r})")
-        kontrol("⛅" in metin, "gösterge fenomen simgesi içerir")
+                f"panel anlık sıcaklığı gösterir ({metin!r})")
+        kontrol("⛅" in metin, "panel fenomen simgesi içerir")
+        ayrinti = uygulama.hava_ayrinti.cget("text")
+        kontrol("Nem %83" in ayrinti and "Rüzgâr 3.6 m/s B" in ayrinti,
+                f"panel nem ve rüzgâr bildirir ({ayrinti!r})")
 
         # --- ayrıntı penceresi ---
         uygulama._hava_pencere()
@@ -250,19 +253,39 @@ def main() -> int:
                 icerik = metin.get("1.0", "end")
                 kontrol("Bakırköy" in icerik and "6.1 °C" in icerik,
                         "ayrıntıda anlık durum var")
+                kontrol("Nem:" in icerik and "Rüzgâr:" in icerik,
+                        "ayrıntıda nem ve rüzgâr var")
                 kontrol("5 Günlük Tahmin" in icerik,
                         "5 günlük tahmin başlığı var")
                 kontrol("MGM (meteoroloji.gov.tr)" in icerik,
                         "kaynak bilgisi var")
             pencere.destroy()
 
-        # --- hata sonucu: sessiz, etiket nötr ---
-        uygulama.hava_gosterge.configure(text="Hava durumu —")
+        # --- hata sonucu: sessiz, panel nötr ---
+        uygulama.hava_baslik.configure(text="Hava durumu —")
         uygulama._sonuc_isle(("hava_hata", None, "NameError: x"))
         kontrol("Hava durumu alınamadı" in uygulama.durum.get(),
                 "hata durum çubuğunda bildirilir")
-        kontrol("Hava durumu —" in uygulama.hava_gosterge.cget("text"),
-                "hata sonrası gösterge nötr kalır")
+        kontrol("Hava durumu —" in uygulama.hava_baslik.cget("text"),
+                "hata sonrası panel nötr kalır")
+
+        # --- Ayarlar penceresi: il/ilçe doldurma (geri dönüş testi:
+        #     tek argümanlı çağrı pencereyi modal dialogla kilitliyordu) ---
+        import tkinter.messagebox as messagebox
+        ayarlar = ui_mod.AyarlarPenceresi(uygulama)
+        uygulama.ayarlar_penceresi = ayarlar
+        bekle(uygulama, 2)  # il listesi arka planda doldurulur
+        kontrol(len(ayarlar.hava_il_combo.cget("values")) >= 2,
+                f"ayarlar'da il listesi dolduruldu "
+                f"({ayarlar.hava_il_combo.cget('values')})")
+        ayarlar.hava_il_degisken.set("İstanbul")
+        uygulama._sonuc_isle(
+            ("hava_ilceler", "İstanbul", ["Gemlik", "İnegöl"]))
+        kontrol("Gemlik" in ayarlar.hava_ilce_combo.cget("values") and
+                "İnegöl" in ayarlar.hava_ilce_combo.cget("values"),
+                "ilçe listesi iki argümanla doldurulur")
+        ayarlar.destroy()
+        uygulama.ayarlar_penceresi = None
     finally:
         uygulama.destroy()
         ui_mod.Ayarlar, ui_mod.Postacim._istemci_kur = eski_ayarlar, eski_kur

@@ -3,6 +3,22 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.28] — 2026-11-24
+
+### Düzeltilen
+- **Ayarlar'da il seçince ilçe listesi gelmiyordu ve pencere askıda
+  kalıyordu:** arka plan sonucu işlenirken `hava_ilceler_doldur` çağrısı
+  tek argümanla yapılıyordu (il eksik) → `TypeError` → grab'lı pencerede
+  modal hata penceresi bloklanıyordu. Çağrı il+ilçe ile yapılmaya
+  başlandı; regresyon denetimi eklendi.
+
+### Değiştirilen
+- Üst çubuktaki hava durumu göstergesi buton yerine **küçük panele**
+  dönüştü: 1. satır fenomen simgesi + yer + sıcaklık, 2. satır
+  **"Nem %83 • Rüzgâr 3,6 m/s B"**. Panelin herhangi bir yerine
+  tıklayınca ayrıntı penceresi açılır (ayrıntıda da nem ve rüzgâr
+  satırları var).
+
 ## [0.1.27] — 2026-11-24
 
 ### Eklenen

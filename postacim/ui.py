@@ -783,13 +783,20 @@ class Postacim(tk.Tk):
             cubuk, text="Yeni e-posta", image=self.ikon["yeni"], compound="left",
             command=self.yeni_posta,
         ).pack(side="left", padx=(4, 0))
-        # Hava durumu göstergesi (Gönder/Al, Yenile, Hesaptan Çıkış
-        # düğmelerinin yerine): tıklayınca ayrıntı penceresi açılır.
-        # Yenile: F5 / menü; Hesaptan Çıkış: menü + Ctrl+Q.
-        self.hava_gosterge = ttk.Button(
-            cubuk, text="Hava durumu —", command=self._hava_pencere,
-        )
-        self.hava_gosterge.pack(side="right", padx=(12, 0))
+        # Hava durumu paneli (Gönder/Al, Yenile, Hesaptan Çıkış
+        # düğmelerinin yerine): 1. satır simge + yer + sıcaklık, 2. satır
+        # nem ve rüzgâr. Panelin herhangi bir yerine tıklayınca ayrıntı
+        # penceresi açılır. Yenile: F5 / menü; Hesaptan Çıkış: menü + Ctrl+Q.
+        self.hava_paneli = ttk.Frame(cubuk)
+        self.hava_paneli.pack(side="right", padx=(12, 0))
+        self.hava_baslik = ttk.Label(self.hava_paneli, text="Hava durumu —")
+        self.hava_baslik.pack(anchor="w")
+        self.hava_ayrinti = ttk.Label(
+            self.hava_paneli, text="", font=(YAZI_TIPİ, 8))
+        self.hava_ayrinti.pack(anchor="w")
+        for _w in (self.hava_paneli, self.hava_baslik, self.hava_ayrinti):
+            _w.bind("<Button-1>", lambda _e: self._hava_pencere())
+            _w.configure(cursor="hand2")
 
     def _gövde_kur(self):
         # Posta | Takvim sekmeleri (Evolution gibi tek pencere)
@@ -2745,7 +2752,7 @@ class Postacim(tk.Tk):
         elif tur == "hava":
             self._hava_uygula(veri[1], veri[2], veri[3], veri[4], veri[5])
         elif tur == "hava_hata":
-            # Sessiz: hava durumu açılışı engellememeli; yalnız etiket nötr kalır
+            # Sessiz: hava durumu açılışı engellememeli; panel nötr kalır
             self.durum.set(f"Hava durumu alınamadı: {veri[2]}")
         elif tur == "hava_iller":
             if getattr(self, "ayarlar_penceresi", None) and \
@@ -2754,7 +2761,7 @@ class Postacim(tk.Tk):
         elif tur == "hava_ilceler":
             if getattr(self, "ayarlar_penceresi", None) and \
                     self.ayarlar_penceresi.winfo_exists():
-                self.ayarlar_penceresi.hava_ilceler_doldur(veri[2])
+                self.ayarlar_penceresi.hava_ilceler_doldur(veri[1], veri[2])
         elif tur == "guncelleme_durum":
             self.durum.set(veri[1])
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
@@ -2984,7 +2991,7 @@ class Postacim(tk.Tk):
             return ("hava_hata", None, f"{type(exc).__name__}: {exc}")
 
     def _hava_uygula(self, il, ilce, merkez, sond, tah):
-        """Çekilen veriyi üst çubuk göstergesine yazar ve önbelleğe alır."""
+        """Çekilen veriyi üst çubuk paneline yazar ve önbelleğe alır."""
         simge, _ad = meteoroloji.hadise_goster(sond.get("hadiseKodu"))
         yer = ilce or merkez.get("ilce") or il
         sicaklik = sond.get("sicaklik")
@@ -2995,11 +3002,27 @@ class Postacim(tk.Tk):
         self._hava_veri = {"il": il, "ilce": ilce, "merkez": merkez,
                            "sondurum": sond, "tahmin": tah}
         try:
-            if getattr(self, "hava_gosterge", None) and \
-                    self.hava_gosterge.winfo_exists():
-                self.hava_gosterge.configure(text=metin)
+            if getattr(self, "hava_paneli", None) and \
+                    self.hava_paneli.winfo_exists():
+                self.hava_baslik.configure(text=metin)
+                parcalar = []
+                nem = sond.get("nem")
+                if isinstance(nem, (int, float)) and nem > -100:
+                    parcalar.append(f"Nem %{nem:g}")
+                hiz, yon = sond.get("ruzgarHiz"), sond.get("ruzgarYon")
+                if isinstance(hiz, (int, float)) and hiz > -100:
+                    parcalar.append(f"Rüzgâr {hiz:g} m/s {self._pusula(yon)}")
+                self.hava_ayrinti.configure(text=" • ".join(parcalar))
         except tk.TclError:
             pass
+
+    @staticmethod
+    def _pusula(yon) -> str:
+        """Rüzgâr derecesini pusula yönüne çevirir (292 → 'B ')."""
+        if isinstance(yon, (int, float)) and 0 <= yon <= 360:
+            return ["K", "KD", "D", "GD", "G", "GB", "B", "KB"][
+                int((yon + 22.5) // 45) % 8] + " "
+        return ""
 
     def _hava_pencere(self):
         """Hava durumu ayrıntı penceresi (anlık + 5 günlük tahmin)."""
@@ -3062,11 +3085,7 @@ class Postacim(tk.Tk):
         bilgi("Nem", sond.get("nem"), "%%{:g}")
         hiz, yon = sond.get("ruzgarHiz"), sond.get("ruzgarYon")
         if isinstance(hiz, (int, float)) and hiz > -100:
-            pusula = ""
-            if isinstance(yon, (int, float)) and 0 <= yon <= 360:
-                pusula = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"][
-                    int((yon + 22.5) // 45) % 8] + " "
-            bilgi("Rüzgâr", hiz, f"{{:g}} m/s {pusula}")
+            bilgi("Rüzgâr", hiz, f"{{:g}} m/s {self._pusula(yon)}")
         bilgi("Basınç", sond.get("denizeIndirgenmisBasinc"), "{:g} hPa")
         v_zaman = (sond.get("veriZamani") or "")[:16].replace("T", " ")
         if v_zaman:

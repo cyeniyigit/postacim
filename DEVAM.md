@@ -1732,3 +1732,28 @@ hava durumu; varsayılan İstanbul; konum Ayarlar'dan değiştirilebilir.
   sonrası nötr gösterge. Not: sahte istekçi `params=` değişkenini
   denetlemeli (URL'de sorgu taşınmıyor).
 - `run_all.sh`: 16 test — hepsi geçti.
+
+
+## Ayarlar ilçe kilitlenmesi + hava durumu paneli (2026-11-24)
+
+**Bildirim:** "ayarlar da ili Bursa olarak seçtiğim de ilçe dropdownu
+yüklenmiyor ve pencere askıda kalıyor" + hata metni:
+"AyarlarPenceresi.hava_ilceler_doldur() missing 1 required positional
+argument: 'ilceler'". Ek istek: sağdaki gösterge buton değil panel gibi
+olsun, Nem ve Rüzgâr da görünsün.
+
+### Düzeltmeler
+- `_sonuc_isle` "hava_ilceler" dalı: çağrı `hava_ilceler_doldur(veri[1],
+  veri[2])` olarak düzeltildi (il+ilçe) — tek argümanlı çağrı TypeError
+  üretip grab'lı Ayarlar penceresinde modal showerror blokluyordu.
+- Hava göstergesi butondan **panele** dönüştü: `hava_paneli` çerçevesi
+  + `hava_baslik` (simge+yer+sıcaklık) + `hava_ayrinti` ("Nem %83 •
+  Rüzgâr 3.6 m/s B"); tıklama alanı tüm panel; paylaşılan `_pusula`
+  yardımcısı (ayrıntı penceresiyle ortak).
+
+### Testler (hepsi geçti)
+- `tests/hava_test.py`: panel satırları (sıcaklık + nem/rüzgâr),
+  ayrıntıda Nem/Rüzgâr satırları; Ayarlar penceresinde il listesi
+  doldurma ve `hava_ilceler` kuyruk sonucuyla ilçe doldurma (geri dönüş
+  denetimi); hata sonrası nötr panel.
+- `run_all.sh`: 16 test — hepsi geçti.
