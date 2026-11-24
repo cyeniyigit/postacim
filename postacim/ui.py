@@ -51,12 +51,14 @@ from .ews import (
     Resim,
     data_uri_verisi,
     govde_html_gosterim,
+    govde_metin_gosterim,
     html_metni,
     html_taglari_kapat,
     html_tablolar_onar,
     iso_yerel,
     resim_verisi,
 )
+from .govde_denetim import cokme_logla, html_guvenli_mi
 from .imap import ImapIstemci, SIRA
 
 UYGULAMA_ADI = "Postacım"
@@ -534,6 +536,9 @@ class Postacim(tk.Tk):
         # menüden açılan uygulamada iz kalmaz → kayda al ve göster.
         self.report_callback_exception = self._tk_hata_yakala
         self._govde_orijinal = False   # gövde orijinal (işlenmemiş) halde mi
+        self._gövde_denetim = {}   # (mesaj kimliği, tür) → True/False/None (denetim sürüyor)
+        self._gövde_bekleyen = {}  # (mesaj kimliği, tür) → denetimde HTML
+        self._gövde_html_aktif = False  # geçerli gövde HTML gösterimi mi
         self._orijinal_gomuler: dict = {}  # resim adresi → data: URI (önbellek)
         self._hava_veri = None         # (il, ilce, merkez, sondurum, tahmin)
 
@@ -2704,6 +2709,7 @@ class Postacim(tk.Tk):
         self.baslik.configure(text="Bir mesaj seçin")
         if self.html_modu:
             self.ayrinti.load_html("")
+            self._gövde_html_aktif = False
         else:
             self.ayrinti.configure(state="normal")
             self.ayrinti.delete("1.0", "end")
@@ -2858,6 +2864,8 @@ class Postacim(tk.Tk):
             self._takvim_cek()
         elif tur == "resim":
             self._resim_yerlestir(veri[1], veri[2])
+        elif tur == "govde_denetim":
+            self._gövde_denetim_sonuc(veri[1])
         elif tur == "resim_hata":
             self._resim_gosterilemedi(veri[1], veri[2])
         elif tur == "ek":
@@ -4136,9 +4144,103 @@ class Postacim(tk.Tk):
     # ------------------------------------------------------- HTML gövde gösterimi
 
     def _html_yukle(self):
-        """HTML gövdeyi (çözülmüş resimlerle) yeniden çizdirir."""
+        """HTML gövdeyi (çözülmüş resimlerle) yeniden çizdirir.
+
+        Çökme denetimi kapısından geçer (postacim/govde_denetim.py):
+        Tkhtml3 (C) bazı bozuk e-postaları segfault ile düşürür; gösterim
+        HTML'i alt süreçte bir kez denenir (mesaj + tür başına
+        önbellekte). Denetim sürerken ve çökme üretirken güvenli metin
+        gösterimi kullanılır.
+        """
         gecen = {k["no"]: k["html"] for k in self.resim_kayitlari if k["html"]}
-        self.ayrinti.load_html(govde_html_gosterim(self.secili, gecen))
+        self._gövde_goster(govde_html_gosterim(self.secili, gecen), "islenmis")
+
+    def _gövde_goster(self, html: str, tur: str):
+        """HTML gösterimini çökme denetimi kapısından geçirip uygular.
+
+        tür: "islenmis" (resim yer tutuculu gösterim) ya da "orijinal".
+        Denetim sonucu önbellekte: True → HTML yüklenir; False → metin
+        gösterimi; yok → önce metin gösterilir, denetim arka planda
+        alt süreçte çalışır, sonuç gelince gösterim güncellenir.
+        """
+        mesaj = self.secili
+        anahtar = (mesaj.item_id, tur)
+        durum = self._gövde_denetim.get(anahtar, "yok")
+        if durum is True:
+            self._gövde_html_baslat(html)
+            return
+        if durum is False:
+            self._gövde_metin_goster(coktu=True)
+            return
+        if durum is None:
+            # Denetim sürüyor: temel HTML zaten yüklüyse (yalnız resim
+            # parçası eklendi) doğrudan yükle; değilse metinde kal.
+            if self._gövde_html_aktif:
+                self._gövde_html_baslat(html)
+            else:
+                self._gövde_metin_goster()
+            return
+        # Hiç denetlenmedi: metin göster, denetimi alt süreçte başlat.
+        self._gövde_denetim[anahtar] = None
+        self._gövde_bekleyen[anahtar] = html
+        self._gövde_metin_goster()
+        threading.Thread(
+            target=self._arka_plan,
+            args=(self._gövde_denetim_is, html, tur, mesaj.item_id),
+            daemon=True,
+        ).start()
+
+    def _gövde_denetim_is(self, html: str, tur: str, item_id: str):
+        """Arka plan iş parçacığı: HTML'i alt süreçte çökme denetimi."""
+        sonuc = html_guvenli_mi(html)
+        if sonuc is False:
+            cokme_logla(f"ilet: {item_id} • gösterim türü: {tur}")
+        return ("govde_denetim", (item_id, tur, sonuc))
+
+    def _gövde_denetim_sonuc(self, veri):
+        """Alt süreç denetimi bitti: önbelleğe yaz, gerekirse gösterimi güncelle."""
+        item_id, tur, sonuc = veri
+        if sonuc is None:
+            # Denetlenemedi (tkinterweb yok, görüntü yok, süreç cevap
+            # vermedi): davranış denetimsiz eskisiyle aynı — göster.
+            sonuc = True
+        anahtar = (item_id, tur)
+        self._gövde_denetim[anahtar] = sonuc
+        html = self._gövde_bekleyen.pop(anahtar, None)
+        mesaj = self.secili
+        if not mesaj or mesaj.item_id != item_id:
+            return  # kullanıcı başka iletiye geçti
+        aktif_tur = "orijinal" if self._govde_orijinal else "islenmis"
+        if aktif_tur != tur:
+            return
+        if sonuc:
+            if tur == "islenmis":
+                # Taze hesap: resim durumu denetim sırasında değişmiş olabilir
+                self._html_yukle()
+            else:
+                self._gövde_goster(html or "", tur)
+        else:
+            self._gövde_metin_goster(coktu=True)
+
+    def _gövde_html_baslat(self, html: str):
+        """HTML gösterimini yükler (denetimden geçmiş kabul edilir)."""
+        self._gövde_html_aktif = True
+        self.ayrinti.load_html(html)
+
+    def _gövde_metin_goster(self, coktu: bool = False):
+        """HTML gösterimi güvenli değilken düz metin gösterimini çizdirir.
+
+        `govde_metin_gosterim` kendi ürettiğimiz `<pre>` sayfadır
+        (tıklanabilir resim yer tutucularıyla); Tkhtml'i çökertmez.
+        """
+        self._gövde_html_aktif = False
+        gecen = {k["no"]: k["html"] for k in self.resim_kayitlari if k["html"]}
+        self.ayrinti.load_html(govde_metin_gosterim(self.secili, gecen))
+        if coktu:
+            self.durum.set(
+                "Bu ileti HTML görünümünde görüntüleyiciyi çökertiyor — "
+                "metin görünümü kullanılıyor (ayrıntı hata.log'da)"
+            )
 
     def _html_baglanti_tikla(self, url: str):
         """Yer tutucu bağlantısı resmi açar; dış bağlantı tarayıcıda açılır."""
@@ -4965,6 +5067,7 @@ class Postacim(tk.Tk):
             self.durum.set("Bu mesaj düz metin — orijinali zaten gösteriliyor")
             return
         self._govde_orijinal = True
+        self._gövde_html_aktif = False  # orijinal HTML henüz yüklenmedi
         self.orijinal_dugme.configure(text="İşlenmiş hali göster")
         self.durum.set("Orijinal gövde hazırlanıyor (resimler çözülüyor)…")
         self._orijinal_gomuler = {}
@@ -5076,8 +5179,10 @@ class Postacim(tk.Tk):
         """Hazırlanan orijinal HTML'i gövde alanında gösterir (hâlâ seçiliyse)."""
         if self.secili is not mesaj or not self._govde_orijinal:
             return  # kullanıcı başka mesaja geçti / işlenmiş görünüme döndü
-        self.ayrinti.load_html(html)
+        self._gövde_goster(html, "orijinal")
         eksik = len(self._orijinal_basarisiz)
+        if self._gövde_denetim.get((mesaj.item_id, "orijinal")) is False:
+            return  # çökme uyarısı durumda kalsın
         self.durum.set(
             "Orijinal gösterim — işlenmiş hal için düğmeye tıklayın"
             + (f" ({eksik} resim yüklenemedi)" if eksik else "")

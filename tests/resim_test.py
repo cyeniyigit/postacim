@@ -372,6 +372,34 @@ def test_html_tablolar_onar():
     )
 
 
+def test_html_onar_yorum_opakligi():
+    """Yorum/script/style içindeki etiketler onarımı yanıltamaz.
+
+    AliExpress tipi e-posta `<table>` içeren `<!--[if mso | IE]>…
+    <![endif]-->` yorumlarıyla doludur; hayalet etiketler sayılınca
+    gerçek tabloya yanlış `<tr><td>`/`</td></tr>` yerleşir ve Tkhtml
+    (C) segfault üretir. Yorum içindekiler dokunulmalıdır.
+    """
+    print("\n— yorum opaklığı —")
+    yorumlu = (
+        "<div><table><tr><td>"
+        "<!--[if mso | IE]><table><tr><td width=\"600\">"
+        "<![endif]-->merhaba"
+        "<!--[if mso | IE]></td></tr></table><![endif]-->"
+        "</td></tr></table></div>"
+    )
+    kontrol(html_tablolar_onar(yorumlu) == yorumlu,
+            "tablolar_onar: yorumdaki tablo sayılmaz")
+    kontrol(html_taglari_kapat(yorumlu) == yorumlu,
+            "taglari_kapat: yorumdaki kapanışlar sayılmaz")
+    stil = "<style>td { color: red; } /* <table> </table> */</style><table><tr><td>x</td></tr></table>"
+    kontrol(html_tablolar_onar(stil) == stil,
+            "tablolar_onar: style gövdesi opak")
+    script = "<script>var x = '<table><tr><td>';</script><table><tr><td>x</td></tr></table>"
+    kontrol(html_taglari_kapat(script) == script,
+            "taglari_kapat: script gövdesi opak")
+
+
 # ----------------------------------------------------------------- EWS ayrıştırma
 
 
@@ -662,6 +690,7 @@ def main() -> int:
     test_html_gosterim()
     test_html_taglari_kapat()
     test_html_tablolar_onar()
+    test_html_onar_yorum_opakligi()
     test_ews_mesaj_detay()
     test_imap_mesaj_detay()
     test_arayuz()

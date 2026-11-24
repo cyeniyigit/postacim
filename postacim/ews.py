@@ -1914,40 +1914,74 @@ _BOS_ETIKET = frozenset({
 _ETIKET_DUZEN = re.compile(r"(?is)</?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?>")
 
 
+_YORUM_DUZEN = re.compile(
+    r"(?s)<!--.*?-->"                          # yorum (mso koşullu yorum dâhil)
+    r"|<script\b[^>]*>.*?</script\s*>"          # script gövdesi
+    r"|<style\b[^>]*>.*?</style\s*>",           # style gövdesi
+    re.I,
+)
+
+
+def _opak_bolunmus(html: str) -> list[tuple[bool, str]]:
+    """HTML'i (opak mı, metin) parçalarına ayırır.
+
+    Yorumlar ile script/style gövdeleri opaktır: içindeki etiket
+    benzeri metinler gerçek akışı etkilemez. AliExpress tipi e-posta
+    `<table>` içeren `<!--[if mso | IE]>…<![endif]-->` yorumlarıyla
+    doludur; bu hayalet etiketler onarım fonksiyonlarını yanıltıp
+    gerçek tabloyu bozunca Tkhtml (C) segfault üretir.
+    """
+    parcalar: list[tuple[bool, str]] = []
+    son = 0
+    for eslesme in _YORUM_DUZEN.finditer(html):
+        if eslesme.start() > son:
+            parcalar.append((False, html[son:eslesme.start()]))
+        parcalar.append((True, eslesme.group(0)))
+        son = eslesme.end()
+    if son < len(html):
+        parcalar.append((False, html[son:]))
+    return parcalar
+
+
 def html_taglari_kapat(html: str) -> str:
     """Kapanmamış etiketleri yığınla kapatır.
 
     Tkhtml (C) kapanmamış `<table>`/`<tbody>` yapısına sonradan gelen
     yeni tabloyu işlerken segfault üretir (ör. Tivibu karşılama e-postası).
     `</body>`/`</html>` görülmeden önce yığındaki etiketler kapatılır.
+    Yorumlar ve script/style gövdeleri dokunulmazdır.
     """
     yigin: list[str] = []
     parcalar: list[str] = []
-    son = 0
-    for eslesme in _ETIKET_DUZEN.finditer(html):
-        parcalar.append(html[son:eslesme.start()])
-        son = eslesme.end()
-        etiket = eslesme.group(1).lower()
-        ham = eslesme.group(0)
-        if ham.startswith("</"):
-            if etiket in yigin:
-                kapanislar: list[str] = []
-                while yigin:
-                    t = yigin.pop()
-                    kapanislar.append(f"</{t}>")
-                    if t == etiket:
-                        break
-                # İçteki etiketleri önce kapat (yığın tepesi en içte),
-                # asıl kapanış yerinde dursun
-                parcalar.append("".join(kapanislar[:-1]))
-                parcalar.append(ham)
+    for opak, metin in _opak_bolunmus(html):
+        if opak:
+            parcalar.append(metin)
+            continue
+        son = 0
+        for eslesme in _ETIKET_DUZEN.finditer(metin):
+            parcalar.append(metin[son:eslesme.start()])
+            son = eslesme.end()
+            etiket = eslesme.group(1).lower()
+            ham = eslesme.group(0)
+            if ham.startswith("</"):
+                if etiket in yigin:
+                    kapanislar: list[str] = []
+                    while yigin:
+                        t = yigin.pop()
+                        kapanislar.append(f"</{t}>")
+                        if t == etiket:
+                            break
+                    # İçteki etiketleri önce kapat (yığın tepesi en içte),
+                    # asıl kapanış yerinde dursun
+                    parcalar.append("".join(kapanislar[:-1]))
+                    parcalar.append(ham)
+                else:
+                    parcalar.append(ham)
             else:
+                if etiket not in _BOS_ETIKET and not ham.endswith("/>"):
+                    yigin.append(etiket)
                 parcalar.append(ham)
-        else:
-            if etiket not in _BOS_ETIKET and not ham.endswith("/>"):
-                yigin.append(etiket)
-            parcalar.append(ham)
-    parcalar.append(html[son:])
+        parcalar.append(metin[son:])
     if yigin:
         parcalar.append("".join(f"</{t}>" for t in reversed(yigin)))
     return "".join(parcalar)
@@ -1970,43 +2004,47 @@ def html_tablolar_onar(html: str) -> str:
     """
     yigin: list[dict] = []  # yalnız tablo çerçeveleri
     parcalar: list[str] = []
-    son = 0
-    for eslesme in _TABLO_ETIKET_DUZEN.finditer(html):
-        parcalar.append(html[son:eslesme.start()])
-        son = eslesme.end()
-        kapanis = eslesme.group(1) == "/"
-        ad = eslesme.group(2).lower()
-        if not kapanis:
-            if ad == "table":
-                ust = yigin[-1] if yigin else None
-                sardi = ust is not None and not ust["hucre"]
-                if sardi:
-                    # Hücresiz bölgede açılan çocuk tablo: sar
-                    parcalar.append("<tr><td>")
-                    ust["hucre"] = True
-                yigin.append({"hucre": False, "sardi": sardi})
-            elif ad in ("td", "th"):
-                if yigin:
-                    yigin[-1]["hucre"] = True
-            elif ad == "tr":
-                if yigin:
-                    yigin[-1]["hucre"] = False  # yeni satır, hücre açılmadı
-            parcalar.append(eslesme.group(0))
-        else:
-            if ad == "table" and yigin:
-                ust = yigin.pop()
-                parcalar.append(eslesme.group(0))
-                if ust["sardi"]:
-                    parcalar.append("</td></tr>")
+    for opak, metin in _opak_bolunmus(html):
+        if opak:
+            parcalar.append(metin)
+            continue
+        son = 0
+        for eslesme in _TABLO_ETIKET_DUZEN.finditer(metin):
+            parcalar.append(metin[son:eslesme.start()])
+            son = eslesme.end()
+            kapanis = eslesme.group(1) == "/"
+            ad = eslesme.group(2).lower()
+            if not kapanis:
+                if ad == "table":
+                    ust = yigin[-1] if yigin else None
+                    sardi = ust is not None and not ust["hucre"]
+                    if sardi:
+                        # Hücresiz bölgede açılan çocuk tablo: sar
+                        parcalar.append("<tr><td>")
+                        ust["hucre"] = True
+                    yigin.append({"hucre": False, "sardi": sardi})
+                elif ad in ("td", "th"):
                     if yigin:
-                        yigin[-1]["hucre"] = False
-                continue
-            if ad == "tr" and yigin:
-                yigin[-1]["hucre"] = False
-            elif ad == "td" and yigin:
-                yigin[-1]["hucre"] = False  # hücre kapandı
-            parcalar.append(eslesme.group(0))
-    parcalar.append(html[son:])
+                        yigin[-1]["hucre"] = True
+                elif ad == "tr":
+                    if yigin:
+                        yigin[-1]["hucre"] = False  # yeni satır, hücre açılmadı
+                parcalar.append(eslesme.group(0))
+            else:
+                if ad == "table" and yigin:
+                    ust = yigin.pop()
+                    parcalar.append(eslesme.group(0))
+                    if ust["sardi"]:
+                        parcalar.append("</td></tr>")
+                        if yigin:
+                            yigin[-1]["hucre"] = False
+                    continue
+                if ad == "tr" and yigin:
+                    yigin[-1]["hucre"] = False
+                elif ad == "td" and yigin:
+                    yigin[-1]["hucre"] = False  # hücre kapandı
+                parcalar.append(eslesme.group(0))
+        parcalar.append(metin[son:])
     if yigin:
         # Dosya sonu: açık tablolar kapatılırken sarmalama unutulmasın
         kapanislar = []
@@ -2058,3 +2096,34 @@ def govde_html_gosterim(mesaj: Mesaj, gecen: dict | None = None) -> str:
     # `<table><table>` (hücresiz iç içe tablo) da Tkhtml'i çökertir.
     govde = html_tablolar_onar(govde)
     return _GOSTERIM_STILI + govde
+
+
+def govde_metin_gosterim(mesaj: Mesaj, gecen: dict | None = None) -> str:
+    """HTML gösterimi çökme üreten ileti için düz metin gösterimi.
+
+    `govde_html_gosterim` çıktısı alt süreç denetiminde Tkhtml'i
+    çökertiyorsa arayüz bu güvenli gösterime döner: gövde metni
+    `<pre>` içinde kaçırılmış olarak basılır; resim yer tutucuları
+    tıklanabilir bağlantıdır (RESIM_SEMASI + sıra no). `gecen`
+    (sıra no → HTML parçası) içindeki resim, yer tutucunun
+    yanında `<img>` olarak da belirir.
+    """
+    gecen = gecen or {}
+    metin = mesaj.govde or mesaj.onizleme or "(gövde yok)"
+    satirlar: list[str] = []
+    resimler = mesaj.resimler or []
+    kalan = metin
+    for no, resim in enumerate(resimler):
+        yer_tutucu = getattr(resim, "yer_tutucu", "")
+        if not yer_tutucu or yer_tutucu not in kalan:
+            continue
+        ad = html_mod.escape(_ad_temizle(resim.ad))
+        if no in gecen:
+            parca = gecen[no]  # çözüldü: yer tutucu yerine resim/hata notu
+        else:
+            parca = f'<a href="{RESIM_SEMASI}{no}">[resim: {ad}]</a>'
+        on, _, kalan = kalan.partition(yer_tutucu)
+        satirlar.append(html_mod.escape(on))
+        satirlar.append(parca)
+    satirlar.append(html_mod.escape(kalan))
+    return _GOSTERIM_STILI + "<pre>" + "".join(satirlar) + "</pre>"

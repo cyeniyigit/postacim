@@ -1843,3 +1843,76 @@ siyah kalmış, sırıtıyor").
   vurgusu #2b6cb0, light↔mavi geçişler, tercih kaydı, Ayarlar'da
   "Mavi" gösterimi.
 - `run_all.sh`: 17 test — hepsi geçti.
+
+
+## AliExpress 08.10.2025 postası çökertiyor (2026-11-24)
+
+**Bildirim:** "AliExpress in 08.10.2025 tarihli mailine tıklayınca
+program çöküyor ve kapanıyor"
+
+### Soruşturma (/tmp/opencode/ali, ikili_arama.py + ddmin)
+- Postanın gövdesi yalnız-okuma çekildi (ali_cikar.py → govde.html).
+- Karakter düzeyi ikili arama yanıltıcı çıktı (`</style>` silinince
+  kalan belge CSS metni sayılıp gövde hiç ayrıştırılmıyordu).
+- Etiket sınırlarında ddmin → 34 KB'lık `.body-wrapper` bölgesi.
+- Kritik bulgu: **ham gövde Tkhtml'de çökmüyor**; postacim'in
+  `govde_html_gosterim` çıktısı çökertiyor.
+- Basamak testi: `html_tablolar_onar` tek başına segfault üretiyor.
+- Kök neden: onarım fonksiyonları etiketleri yorumların içinden de
+  sayıyordu; mso koşullu yorumlardaki hayalet `<table>` sayısına göre
+  gerçek akışa yanlış `<tr><td>`/`</td></tr>` yerleşiyordu.
+
+### Düzeltme (`postacim/ews.py`)
+- `_YORUM_DUZEN` + `_opak_bolunmus()`: yorum (mso koşullu yorum dâhil)
+  ve script/style gövdeleri opak bölge.
+- `html_taglari_kapat` ve `html_tablolar_onar` artık segment segment
+  işler; opak bölgeden geçmez.
+- `tests/resim_test.py`'ya yorum opaklığı denetimi eklendi.
+- run_all.sh 17/17 geçti.
+
+### Doğrulama
+- Gerçek gövdeyle `govde_html_gosterim` çıktısı Tkhtml'de 15 sn
+  canlı kaldı (eskiden segfault); önizleme ekran görüntüsü alındı
+  (/tmp/opencode/ali/onek_onizleme.png) ve kullanıcıya gösterildi.
+- Push bekliyor (kural 5-7).
+
+
+## HTML gövde render'ının alt süreçte çökme denetimi (2026-11-24)
+
+**Bildirim:** "Tkhtml terk edilmiş; Chromium gibi bir kütüphane daha
+mantıklı değil mi?" tartışması sonrası seçilen çözüm: pywebview/
+WebKitGTK gömme yerine **alt süreç çökme izolasyonu** (maliyeti en az,
+bağımlılık eklemez).
+
+### Yeni modül: `postacim/govde_denetim.py`
+- `html_guvenli_mi(html)`: gösterim HTML'ini **alt süreçte** (gizli
+  pencere, dış istekler kapalı, uygulama ayarlarıyla aynı HtmlFrame)
+  yükler; ~2 sn hayatta kalırsa True, segfault'ta False, denetlenemediyse
+  None (gösterim engellenmez — eski davranış).
+- `cokme_logla()`: alt süreç çökmesini hata.log'a yazar.
+- `__main__.py`: `faulthandler` açıldı — gelecek segfaultlarda iz
+  hata.log'a düşer (bugüne kadar çökme kayıpsız geliyordu).
+
+### `ews.py`
+- `govde_metin_gosterim(mesaj, gecen)`: çökme üreten ileti için güvenli
+  `<pre>` metin gösterimi; resim yer tutucuları tıklanabilir bağlantı,
+  çözülen resim yer tutucunun yerine geçer.
+
+### `ui.py`
+- `_html_yukle` artık `_gövde_goster` kapısından geçer: mesaj + tür
+  ("islenmis"/"orijinal") başına önbellek. Denetimsizken güvenli metin
+  gösterilir, denetim arka planda koşar; True'da HTML'e geçilir,
+  False'ta metin kalır + durum uyarısı + hata.log.
+- Orijinal gösterim ("orijinal" türü) da aynı kapıdan geçer.
+- Hata zincirinden düzeltmeler: denetim sonucunda eski (resimsiz)
+  bekleyen HTML'in geri yüklenmesi; orijinal moda geçişte
+  `_gövde_html_aktif` sıfırlanması.
+
+### Testler
+- `tests/govde_denetim_test.py` (yeni; run_all.sh'a eklendi): temiz
+  HTML True, bilinen çökertici (hücresiz iç içe tablo) False, boş HTML
+  geçer, çökme kaydı yazılır, govde_metin_gosterim denetimleri.
+- Uçtan uca: gerçek AliExpress postası `_detay_goster` ile — metin
+  görünümü anında, denetim ~2,5 sn sonra True, HTML'e geçiş; uygulama
+  ayakta (önizleme: /tmp/opencode/ali/izolasyon_onizleme.png).
+- run_all.sh 18/18 geçti.

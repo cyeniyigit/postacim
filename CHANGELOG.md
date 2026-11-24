@@ -3,6 +3,41 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.33] — 2026-11-24
+
+### Eklenen
+- **Gövde HTML'i için alt süreç çökme denetimi** (`postacim/
+  govde_denetim.py`): Tkhtml3 (C) bazı bozuk e-postalarda segfault
+  üretip uygulamayı düşürebiliyordu. Gösterim HTML'i artık alt süreçte
+  bir kez denenir (mesaj + gösterim türü başına önbellek): hayatta
+  kalırsa HTML gösterilir; çökme üretirse ileti güvenli **metin
+  görünümünde** açılır ve çökme ayrıntısı hata.log'a yazılır. Denetim
+  sürerken de metin görünümü gösterilir (boş bekleme yok).
+- `govde_metin_gosterim`: çökme üreten iletilerin güvenli metin
+  gösterimi (tıklanabilir resim yer tutucularıyla).
+- Uygulama başlangıcında `faulthandler`: C düzeyi çökmelerde iz
+  hata.log'a düşer.
+
+### Düzeltilen
+- **AliExpress 08.10.2025 postası programı çökertiyordu:** ham e-posta
+  HTML'i zararsızdı; çöküntü `govde_html_gosterim`'in onarım adımlarından
+  geliyordu. `html_taglari_kapat` ve `html_tablolar_onar` etiket
+  tararken **HTML yorumlarının içindeki** (`<!--[if mso | IE]>…
+  <![endif]-->`) tablo etiketlerini de sayıyordu; hayalet etiketler
+  gerçek akışa yanlış `<tr><td>`/`</td></tr>` yerleştirip tabloyu
+  bozunca Tkhtml3 (C) segfault üretiyordu. Artık yorumlar ile
+  script/style gövdeleri (`_opak_bolunmus`) onarım geçişlerinde
+  dokunulmazdır. İkili arama (ddmin) ile tetikleyici bu postada
+  doğrulandı; posta artık tam içeriğiyle açılıyor.
+
+### Testler
+- `tests/govde_denetim_test.py` eklendi (run_all.sh'a da): temiz HTML
+  geçer, bilinen çökertici False döner, çökme kaydı yazılır,
+  govde_metin_gosterim denetlenir.
+- `tests/resim_test.py`'ya "yorum opaklığı" denetimi eklendi
+  (yorum/script/style içindeki etiketler onarımı yanıltamaz).
+- `run_all.sh` 18/18 geçti.
+
 ## [0.1.28] — 2026-11-24
 
 ### Düzeltilen
@@ -622,3 +657,4 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   taşmıyor (Açık/Koyu/Mavi tek satırda).
 - Üst menüden "Görünüm" menüsü kaldırıldı — tema tercihi Ayarlar ▸
   Genel'den yapılıyor.
+
