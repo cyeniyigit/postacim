@@ -59,6 +59,7 @@ from .ews import (
     resim_verisi,
 )
 from .govde_denetim import cokme_logla, html_guvenli_mi
+from . import govde_denetim
 from .imap import ImapIstemci, SIRA
 
 UYGULAMA_ADI = "Postacım"
@@ -539,6 +540,7 @@ class Postacim(tk.Tk):
         self._gövde_denetim = {}   # (mesaj kimliği, tür) → True/False/None (denetim sürüyor)
         self._gövde_bekleyen = {}  # (mesaj kimliği, tür) → denetimde HTML
         self._gövde_html_aktif = False  # geçerli gövde HTML gösterimi mi
+        self._gövde_html_anahtar = None  # HTML'de görünen ileti+tür anahtarı
         self._orijinal_gomuler: dict = {}  # resim adresi → data: URI (önbellek)
         self._hava_veri = None         # (il, ilce, merkez, sondurum, tahmin)
 
@@ -2710,6 +2712,7 @@ class Postacim(tk.Tk):
         if self.html_modu:
             self.ayrinti.load_html("")
             self._gövde_html_aktif = False
+            self._gövde_html_anahtar = None
         else:
             self.ayrinti.configure(state="normal")
             self.ayrinti.delete("1.0", "end")
@@ -4082,7 +4085,12 @@ class Postacim(tk.Tk):
                 image=self._ek_ikonu(ek.ad),
             )
         self.ek_listesi.ekler = mesaj.ekler
-        self.durum.set(f"{mesaj.tarih} • {mesaj.gonderen}")
+        # HTML denetimi sürüyorsa durum çubuğunda "hazırlanıyor" kalsın
+        denetim = "yok"
+        if self.html_modu:
+            denetim = self._gövde_denetim.get((mesaj.item_id, "islenmis"), "yok")
+        if denetim == "yok" or denetim is True:
+            self.durum.set(f"{mesaj.tarih} • {mesaj.gonderen}")
         if not mesaj.okundu:
             threading.Thread(
                 target=self._arka_plan, args=(self._okundu_isaretle_kuyruk,), daemon=True
@@ -4173,17 +4181,29 @@ class Postacim(tk.Tk):
             self._gövde_metin_goster(coktu=True)
             return
         if durum is None:
-            # Denetim sürüyor: temel HTML zaten yüklüyse (yalnız resim
-            # parçası eklendi) doğrudan yükle; değilse metinde kal.
-            if self._gövde_html_aktif:
+            # Denetim sürüyor: bu iletinin temel HTML'i zaten
+            # görüntüdeyse (yalnız resim parçası eklendi) doğrudan yükle;
+            # başka bir iletinin içeriği ekrandaysa gövdeyi boşalt —
+            # düz metin yalnız denetim çökme saptarsa yüklenir.
+            if self._gövde_html_anahtar == anahtar:
                 self._gövde_html_baslat(html)
-            else:
-                self._gövde_metin_goster()
+            elif self._gövde_html_anahtar is not None:
+                self._gövde_govdeyi_temizle()
+                self.durum.set("İleti HTML olarak hazırlanıyor…")
             return
-        # Hiç denetlenmedi: metin göster, denetimi alt süreçte başlat.
+        # Hiç denetlenmedi. Tablosuz HTML bilinen çökme desenlerini
+        # içeremez: denetim atlanır, HTML doğrudan gösterilir
+        # (metin flaşı ve alt süreç yok).
+        if govde_denetim.denetim_gerekmez(html):
+            self._gövde_denetim[anahtar] = True
+            self._gövde_html_baslat(html)
+            return
+        # Tablolu HTML: gövde boş bırakılır (düz metin yalnız çökme
+        # saptanınca yüklenir), denetim alt süreçte koşar.
         self._gövde_denetim[anahtar] = None
         self._gövde_bekleyen[anahtar] = html
-        self._gövde_metin_goster()
+        self._gövde_govdeyi_temizle()
+        self.durum.set("İleti HTML olarak hazırlanıyor…")
         threading.Thread(
             target=self._arka_plan,
             args=(self._gövde_denetim_is, html, tur, mesaj.item_id),
@@ -4217,6 +4237,7 @@ class Postacim(tk.Tk):
             if tur == "islenmis":
                 # Taze hesap: resim durumu denetim sırasında değişmiş olabilir
                 self._html_yukle()
+                self.durum.set(f"{mesaj.tarih} • {mesaj.gonderen}")
             else:
                 self._gövde_goster(html or "", tur)
         else:
@@ -4224,8 +4245,17 @@ class Postacim(tk.Tk):
 
     def _gövde_html_baslat(self, html: str):
         """HTML gösterimini yükler (denetimden geçmiş kabul edilir)."""
+        mesaj = self.secili
+        tur = "orijinal" if self._govde_orijinal else "islenmis"
         self._gövde_html_aktif = True
+        self._gövde_html_anahtar = (mesaj.item_id, tur) if mesaj else None
         self.ayrinti.load_html(html)
+
+    def _gövde_govdeyi_temizle(self):
+        """Gövde alanını boşaltır (denetim sırasında içerik gösterilmez)."""
+        self._gövde_html_aktif = False
+        self._gövde_html_anahtar = None
+        self.ayrinti.load_html("")
 
     def _gövde_metin_goster(self, coktu: bool = False):
         """HTML gösterimi güvenli değilken düz metin gösterimini çizdirir.
@@ -4234,6 +4264,7 @@ class Postacim(tk.Tk):
         (tıklanabilir resim yer tutucularıyla); Tkhtml'i çökertmez.
         """
         self._gövde_html_aktif = False
+        self._gövde_html_anahtar = None
         gecen = {k["no"]: k["html"] for k in self.resim_kayitlari if k["html"]}
         self.ayrinti.load_html(govde_metin_gosterim(self.secili, gecen))
         if coktu:

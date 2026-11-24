@@ -10,10 +10,25 @@ mesaj + gösterim türü); böylece her ileti için denetim bir kez çalışır.
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
+
+_TABLO_ADI = re.compile(r"<table[\s>/]", re.I)
+
+
+def denetim_gerekmez(html: str) -> bool:
+    """HTML tablo içermiyorsa denetim gerekmez (True döner).
+
+    Tkhtml3'te bugüne dek gözlenen segfault sınıflarının hepsi tablo
+    yapısına bağlıdır (kapanmamış tablo/tbody, hücresiz iç içe tablo,
+    yorum içindeki hayalet tablo etiketleri). Tablosuz HTML bilinen
+    çökme desenlerinden etkilenmez; alt süreç denetimi atlanıp HTML
+    doğrudan gösterilir (bekleme/flaş olmaz).
+    """
+    return not _TABLO_ADI.search(html or "")
 
 # Alt süreçte koşan denetçi: HTML'i tkinterweb'in aynı ayarlarıyla
 # (dış istekler kapalı, script yok) gizli pencerede yükler; `sure`
@@ -44,7 +59,7 @@ print("HAYATTA")
 
 
 def html_guvenli_mi(
-    html: str, sure: float = 2.0, zaman_asimi: float = 15.0
+    html: str, sure: float = 1.0, zaman_asimi: float = 15.0
 ) -> bool | None:
     """HTML'i alt süreçte yükleyip çökme üretip üretmediğini döndürür.
 
@@ -52,6 +67,9 @@ def html_guvenli_mi(
     (denetlenemedi: tkinterweb yok, görüntü yok ya da süreç cevap
     vermedi). None durumunda gösterim engellenmez — davranış
     denetimsiz eskisiyle aynı kalır.
+
+    `sure`: yükleme sonrası gözlem penceresi. Bilinen çökertilier
+    yüklemeyi izleyen ~0,4 sn içinde ölüyor; 1 sn marj yeterlidir.
     """
     if not html:
         return True

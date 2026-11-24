@@ -1916,3 +1916,49 @@ bağımlılık eklemez).
   görünümü anında, denetim ~2,5 sn sonra True, HTML'e geçiş; uygulama
   ayakta (önizleme: /tmp/opencode/ali/izolasyon_onizleme.png).
 - run_all.sh 18/18 geçti.
+
+
+## Gövde yükleme flaşının azaltılması (2026-11-24)
+
+**Bildirim:** "mail gövdesi yükleme anında düz metin gösteriliyor,
+birkaç saniye sonra mail yükleniyor — itici duruyor"
+
+### Ölçüm
+- Bilinen çökertilier yüklemeyi izleyen ~0,4 sn içinde ölüyor (sentetik
+  ve AliExpress çökertilier: 0,34-0,40 sn).
+- Alt süreç toplam süresi 2,0 sn pencereyle ~2,5 sn; 1,0 sn pencereyle
+  ~1,3 sn.
+
+### Düzeltme
+- `govde_denetim.denetim_gerekmez(html)`: HTML tablo içermiyorsa
+  (`<table[\s>/]`) bilinen çökme sınıflarının hepsi tablo tabanlı
+  olduğundan denetim atlanır → **HTML anında** gösterilir (tablosuz
+  iletilerde flaş + alt süreç tamamen yok; ölçüm 0,07 sn).
+- Gözlem penceresi 2,0 → 1,0 sn (çökertilier 0,4 sn'de öldüğünden
+  yeterli marj) → tablolu iletilerde metin flaşı ~1,2 sn'ye indi
+  (AliExpress ile ölçüldü: 1,23 sn).
+- `tests/govde_denetim_test.py`'ya denetim_gerekmez denetimleri eklendi;
+  run_all.sh 18/18 geçti.
+
+
+## Denetim sırasında düz metin yükleme kaldırma (2026-11-24)
+
+**Bildirim:** "kontrole düz metin olarak hiç yüklenmesin; sadece
+açamayacağı durumda düz metin olarak yüklesin"
+
+### Düzeltme (`ui.py`)
+- `_gövde_goster`: tablolu HTML denetlenirken gövde **boş** kalır
+  (`load_html("")` + `_gövde_govdeyi_temizle`), durum çubuğu
+  "İleti HTML olarak hazırlanıyor…" der; düz metin gösterilmez.
+- Düz metin yalnız denetim False saptarsa (`coktu=True`) yüklenir.
+- `_detay_goster` durum çubuğu ezmesi engellendi (denetim sürerken
+  tarih•gönderen yazılmaz; sonuçta geri gelir).
+- İleti/tür anahtarı (`_gövde_html_anahtar`) eklendi: ileti değişiminde
+  eski içeriğin ekranda kalması ve denetimsiz HTML'in atlanarak
+  yüklenmesi engellendi.
+
+### Doğrulama
+- Tablolu ileti: denetim sırasında gövde boş + durum çubuğu
+  hazırlanıyor; ~1,3 sn sonra HTML + tarih•gönderen durumu.
+- Fallback (denetim False): güvenli metin görünümü + çökme uyarısı.
+- run_all.sh 18/18 geçti.

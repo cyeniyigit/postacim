@@ -33,6 +33,22 @@ COKERTICI = "<html><body><table><table><tr><td>x</td></tr></table></table></body
 TEMIZ = "<html><body><p>merhaba dünya</p></body></html>"
 
 
+def test_denetim_gerekmez():
+    print("\n— denetim_gerekmez —")
+    from postacim.govde_denetim import denetim_gerekmez
+
+    kontrol(
+        denetim_gerekmez("<html><body><p>tablo yok</p></body></html>") is True,
+        "tablosuz HTML denetimsiz gösterilir",
+    )
+    for ornek in ("<table>", "<TABLE WIDTH=600>", '<table class="x">'):
+        kontrol(
+            denetim_gerekmez(f"<html><body>{ornek}<tr><td>x</td></tr></body></html>") is False,
+            f"tablo tespit edilir: {ornek}",
+        )
+    kontrol(denetim_gerekmez("") is True, "boş HTML denetimsiz")
+
+
 def test_html_guvenli_mi():
     print("\n— html_guvenli_mi —")
     from postacim.govde_denetim import html_guvenli_mi
@@ -93,6 +109,7 @@ def test_govde_metin_gosterim():
 
 
 def main() -> int:
+    test_denetim_gerekmez()
     test_html_guvenli_mi()
     test_cokme_logla()
     test_govde_metin_gosterim()

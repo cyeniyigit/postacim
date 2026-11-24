@@ -3,6 +3,28 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.34] — 2026-11-24
+
+### Değiştirilen
+- **Gövde yükleme flaşı azaltıldı:**
+  - Tablo içermeyen HTML artık alt süreç denetiminden geçmez — anında
+    gösterilir (bugüne dek gözlenen Tkhtml3 çökme sınıflarının hepsi
+    tablo tabanlı; ölçüm: 0,07 sn).
+  - Tablolu HTML'de gözlem penceresi 2,0 → 1,0 sn indirildi (bilinen
+    çökertilier yüklemeyi izleyen ~0,4 sn'de ölüyor); tablolu
+    iletilerde HTML'e geçiş ~1,2 sn.
+  - Denetim sırasında gövde artık **düz metinle doldurulmuyor**: boş
+    kalır, durum çubuğu "İleti HTML olarak hazırlanıyor…" der. Düz
+    metin yalnız denetim çökme saptayıp metin görünümüne düşerken
+    yüklenir.
+  - İleti değişiminde eski iletinin içeriğinin ekranda kalması ve
+    denetim sürerken denetimsiz HTML'in atlanarak yüklenmesi
+    engellendi (`_gövde_html_anahtar`).
+
+### Testler
+- `tests/govde_denetim_test.py`'ya `denetim_gerekmez` denetimleri
+  eklendi; run_all.sh 18/18 geçti.
+
 ## [0.1.33] — 2026-11-24
 
 ### Eklenen
