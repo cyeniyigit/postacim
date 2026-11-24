@@ -60,10 +60,13 @@ def daha_yeni(yeni: str, eski: str) -> bool:
 def son_surum(zaman_asimi: float = 5.0) -> tuple[str | None, str | None]:
     """GitHub'daki en yeni sürüm (sürüm, arşiv-adresi).
 
-    Önce Releases API, olmazsa main dalındaki `__init__.py` okunur
-    (proje GitHub Release kullanmayabilir). Ağ yoksa / yanıt yoksa
-    (None, None) — hata fırlatmaz, açılışı engellememeli.
+    Releases API ile `main` dalındaki `__init__.py` **ikisi de** denenir
+    ve en yeni aday döndürülür — Releases sayfası geride kalabilir (yeni
+    sürüm main'e girmiş, release yapılmamış olabilir). Ağ yoksa / yanıt
+    yoksa (None, None) — hata fırlatmaz, açılışı engellememeli.
     """
+    mevcut = mevcut_surum()
+    aday: tuple[str, str] | None = None
     try:
         yanit = requests.get(
             API_ADRESI,
@@ -74,17 +77,21 @@ def son_surum(zaman_asimi: float = 5.0) -> tuple[str | None, str | None]:
             bilgi = yanit.json()
             surum = (bilgi.get("tag_name") or "").lstrip("v")
             if surum:
-                return surum, bilgi.get("tarball_url") or ARSIV_ADRESI
+                aday = (surum, bilgi.get("tarball_url") or ARSIV_ADRESI)
     except (requests.RequestException, ValueError):
         pass
+    if aday and daha_yeni(aday[0], mevcut):
+        return aday  # Releases'ta kuruluandan yeni sürüm var — yeterli
     try:
         yanit = requests.get(RAW_ADRESI, timeout=zaman_asimi)
         eslesme = re.search(r'__version__\s*=\s*"([^"]+)"', yanit.text)
         if yanit.ok and eslesme:
-            return eslesme.group(1), ARSIV_ADRESI
+            surum = eslesme.group(1)
+            if not aday or daha_yeni(surum, aday[0]):
+                aday = (surum, ARSIV_ADRESI)
     except requests.RequestException:
         pass
-    return None, None
+    return aday if aday else (None, None)
 
 
 def indir(

@@ -88,6 +88,15 @@ def main() -> int:
         kontrol(surum == "0.1.18", f"yedek raw sürümü ({surum})")
         kontrol(adres == g.ARSIV_ADRESI, "yedekte dal arşivi")
 
+        # Releases geride kalırsa (eski etiket) raw'daki yeni sürüm kazanır
+        requests.get = yanitla([
+            Yanit(json_={"tag_name": "v0.1.6"}),
+            Yanit(metin='__version__ = "0.1.17"'),
+        ])
+        surum, adres = g.son_surum()
+        kontrol(surum == "0.1.17", f"eski release gölgelemesin ({surum})")
+        kontrol(adres == g.ARSIV_ADRESI, "geride kalan release'te dal arşivi")
+
         # Ağ yok → (None, None)
         def hata(*a, **k):
             raise requests.RequestException("yok")
