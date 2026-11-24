@@ -1795,3 +1795,20 @@ __version__ 0.1.28 olduğundan `kur()` doğrulaması
   açılışta palet uygulanır (Treeview/kök/vurgu), light'a dönüş + tercih
   kaydı, maviye geri dönüş, Ayarlar'da "Mavi" seçeneği.
 - `run_all.sh`: 17 test — hepsi geçti.
+
+
+## Ayarlar penceresi taşması + Görünüm menüsü kaldırma (2026-11-24)
+
+**Bildirim:** "~/ayhata.png da görebileceğin gibi mavi tema ui ın
+dışına çıkıyor. ayrıca üst menüden Görünüm kısmını çıkaralım"
+(ekran kaydı: Ayarlar'da "Mavi" radyo düğmesi pencere kenarından
+taşıyor).
+
+### Düzeltmeler (`ui.py`)
+- AyarlarPenceresi: 580x560 → 680x560, minsize 520→620 (Açık/Koyu/Mavi
+  radyo satırı tek satırda sığıyor).
+- `_menu_kur`: "Görünüm" menüsü kaldırıldı (tema Ayarlar ▸ Genel'den);
+  `tema_degisken` `_tema_degistir` uyumu için tutulur.
+- `tests/tema_test.py` radyo taraması derinleştirildi (notebook sayfası
+  içi widget'lar da taranır).
+- run_all.sh 17/17.

@@ -603,3 +603,11 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   (#2b6cb0). Ayarlar ▸ Genel'de Açık/Koyu seçeneklerinin yanında
   "Mavi" seçeneği; takvim de koyu palete geçer. Tercih hesap.json'da
   saklanır.
+
+## [0.1.31] — 2026-11-24
+
+### Düzeltilen / Değiştirilen
+- Ayarlar penceresi genişletildi: "Mavi" tema seçeneği artık pencereden
+  taşmıyor (Açık/Koyu/Mavi tek satırda).
+- Üst menüden "Görünüm" menüsü kaldırıldı — tema tercihi Ayarlar ▸
+  Genel'den yapılıyor.

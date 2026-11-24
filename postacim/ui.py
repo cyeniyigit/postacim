@@ -745,19 +745,9 @@ class Postacim(tk.Tk):
         menü.add_cascade(label="Hesaplar", menu=hesaplar_m)
         self.hesap_menu = hesaplar_m  # test için
 
-        gorunum = tk.Menu(menü, tearoff=0)
+        # Tema tercihi Ayarlar ▸ Genel'den değiştirilir ("Görünüm" menüsü
+        # kaldırıldı); tema_degisken _tema_degistir ile uyumlu dursun.
         self.tema_degisken = tk.StringVar(value=self.tema)
-        gorunum.add_radiobutton(
-            label="Açık tema", image=self.ikon["tema_acik"], compound="left",
-            variable=self.tema_degisken, value="light",
-            command=lambda: self._tema_degistir("light"),
-        )
-        gorunum.add_radiobutton(
-            label="Koyu tema", image=self.ikon["tema_koyu"], compound="left",
-            variable=self.tema_degisken, value="dark",
-            command=lambda: self._tema_degistir("dark"),
-        )
-        menü.add_cascade(label="Görünüm", menu=gorunum)
 
         eylem = tk.Menu(menü, tearoff=0)
         eylem.add_command(
@@ -6721,8 +6711,9 @@ class AyarlarPenceresi(tk.Toplevel):
         super().__init__(ana)
         self.ana = ana
         self.title("Ayarlar")
-        self.geometry("580x560")
-        self.minsize(520, 460)
+        # 680px: tema radyo düğmeleri (Açık/Koyu/Mavi) tek satırda sığar
+        self.geometry("680x560")
+        self.minsize(620, 460)
         self.transient(ana)
         ana._pencere_simgesi(self)
         # Geçici kopya: Kaydet'e kadar dokunulmaz
