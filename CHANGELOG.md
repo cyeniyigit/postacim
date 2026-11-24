@@ -3,6 +3,16 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.23] — 2026-11-24
+
+### Düzeltilen
+- **Orijinal görünümde uzak resimler kırık görünüyordu:** birçok CDN
+  (ör. Hepsiburada) tarayıcı kimliği (User-Agent) taşımayan istekleri
+  403 ile reddediyor. Uzak resim indirmeleri artık tarayıcı kimliği ve
+  resim kabul başlığıyla yapılır (elle gösterilen resimlerde de geçerli).
+- Orijinal gösterimde işlenmiş moda ait "Resimleri göster" çubuğu artık
+  gizlenir; yüklenemeyen resim varsa durum çubuğu sayısını bildirir.
+
 ## [0.1.22] — 2026-11-24
 
 ### Düzeltilen

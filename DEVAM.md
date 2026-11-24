@@ -1573,3 +1573,33 @@ gösterilemiyor" — kırık resim ikonu (kullanıcı onayı).
 - `tests/orijinal_goster_test.py`'a m3: tek tırnak + `CID:II_1` büyük
   harf + boş `resimler` listesi → resim gömülür, içerik görünür.
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## Orijinal görünümde uzak resimlerin kırık kalması (2026-11-24)
+
+**Bildirim:** "hala gösterilmiyor" + ekran kaydı (`~/hata.png`) —
+Hepsiburada sipariş postası; orijinal mod açık, resimler kırık
+(alt metinleri görünüyordu), HTML düzeni doğru çiziliyordu.
+
+### Kök neden
+- Deneysel ölçüm: `requests.get(url)` **User-Agent'sız** → CDN 403;
+  tarayıcı UA'lı → 200. Uygulama resim indirmeleri python-requests
+  varsayılan kimliğiyle gittiği için Hepsiburada gibi CDN'ler
+  reddediyordu (işlenmiş modda uzak resimler zaten engellendiğinden
+  fark edilmemişti).
+
+### Düzeltmeler
+- `ews.py`: `TARAYICI_BASLIK` (Mozilla UA + Accept) eklendi;
+  `resim_verisi` http yolu hem doğrudan istekte hem NTLM oturum
+  yeniden denemesinde bu başlıkları kullanır (tıkla-göster akışı da
+  yararlanır).
+- `ui.py`: orijinal moda girince "Resimleri göster" çubuğu gizlenir
+  (geri dönüşte `_resim_cubugunu_guncelle` yeniden gösterir);
+  çözülemeyen resim sayısı durum çubuğunda "(N resim yüklenemedi)"
+  olarak bildirilir.
+
+### Testler (hepsi geçti)
+- `tests/resim_test.py`: yerel sunucu artık `/resim.png` isteklerinin
+  User-Agent'ını kaydeder; `resim_verisi` http isteğinin `Mozilla/5.0`
+  kimliği taşıdığı doğrulanır. `SahteOturum.get` `headers` kabul eder.
+- `run_all.sh`: 15 test — hepsi geçti.

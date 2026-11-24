@@ -72,7 +72,7 @@ class SahteYanit:
 
 
 class SahteOturum:
-    def get(self, url, timeout=None):
+    def get(self, url, timeout=None, headers=None):
         return SahteYanit()
 
 
@@ -80,9 +80,11 @@ class ResimHttpHandler(BaseHTTPRequestHandler):
     """GET /resim.png → PNG baytları; diğer her şeye 401."""
 
     png = b""
+    istek_ua: list = []  # /resim.png isteklerinin User-Agent başlıkları
 
     def do_GET(self):
         if self.path == "/resim.png":
+            self.istek_ua.append(self.headers.get("User-Agent") or "")
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(self.png)))
@@ -91,6 +93,7 @@ class ResimHttpHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(401)
             self.send_header("WWW-Authenticate", "NTLM")
+            self.send_header("Content-Length", "0")
             self.end_headers()
 
     def log_message(self, *args):
@@ -167,10 +170,15 @@ def test_cozumleme():
     port = sunucu.server_address[1]
     threading.Thread(target=sunucu.serve_forever, daemon=True).start()
     try:
+        ResimHttpHandler.istek_ua = []
         veri = resim_verisi(
             None, mesaj, Resim(kaynak=f"http://127.0.0.1:{port}/resim.png")
         )
         kontrol(veri == png, "http resmi indirilir")
+        kontrol(bool(ResimHttpHandler.istek_ua) and
+                "Mozilla/5.0" in ResimHttpHandler.istek_ua[0],
+                f"uzak resim istekleri tarayıcı kimliğiyle gönderilir "
+                f"({ResimHttpHandler.istek_ua})")
 
         # 401 → istemci oturumu (NTLM) ile yeniden dener
         istemci = SahteIstemci()

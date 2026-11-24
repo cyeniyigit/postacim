@@ -1850,10 +1850,13 @@ def resim_verisi(istemci, mesaj: Mesaj, resim: Resim) -> bytes:
 
     if kaynak.lower().startswith(("http://", "https://")):
         try:
-            yanit = requests.get(kaynak, timeout=20)
+            # Birçok CDN (ör. Hepsiburada) tarayıcı kimliği (User-Agent)
+            # olmayan istekleri 403 ile reddedir; bu yüzden resim
+            # indirmeleri tarayıcı kimliğiyle gönderilir.
+            yanit = requests.get(kaynak, timeout=20, headers=TARAYICI_BASLIK)
             if yanit.status_code == 401 and getattr(istemci, "oturum", None) is not None:
                 # Kurum içi barındırılan resimler NTLM isteyebilir.
-                yanit = istemci.oturum.get(kaynak, timeout=20)
+                yanit = istemci.oturum.get(kaynak, timeout=20, headers=TARAYICI_BASLIK)
             yanit.raise_for_status()
             return yanit.content
         except requests.RequestException as exc:
@@ -1879,6 +1882,16 @@ def resim_verisi(istemci, mesaj: Mesaj, resim: Resim) -> bytes:
 
 
 RESIM_SEMASI = "postacim-resim:"  # yer tutucu bağlantısı: postacim-resim:0
+
+# Uzak resim indirmeleri için tarayıcı kimliği (CDN'ler UA'sız istekleri
+# 403 ile reddeder; bkz. resim_verisi).
+TARAYICI_BASLIK = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+}
 
 _GOSTERIM_STILI = (
     "<style>"

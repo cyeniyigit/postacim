@@ -4669,6 +4669,11 @@ class Postacim(tk.Tk):
         self.orijinal_dugme.configure(text="İşlenmiş hali göster")
         self.durum.set("Orijinal gövde hazırlanıyor (resimler çözülüyor)…")
         self._orijinal_gomuler = {}
+        self._orijinal_basarisiz: list[str] = []
+        try:
+            self.resim_cubugu.pack_forget()  # resim çubuğu işlenmiş moddandır
+        except tk.TclError:
+            pass
         threading.Thread(
             target=self._arka_plan, args=(self._orijinal_hazirla, mesaj), daemon=True
         ).start()
@@ -4725,6 +4730,7 @@ class Postacim(tk.Tk):
                     for a in {adres, adres.lower()}:
                         gomuler[a] = uri
                     return
+            self._orijinal_basarisiz.append(adres)
 
         # 1) Mesajın resim kayıtları + HTML'deki tüm src adresleri
         for resim in mesaj.resimler or []:
@@ -4759,7 +4765,11 @@ class Postacim(tk.Tk):
         if self.secili is not mesaj or not self._govde_orijinal:
             return  # kullanıcı başka mesaja geçti / işlenmiş görünüme döndü
         self.ayrinti.load_html(html)
-        self.durum.set("Orijinal gösterim — işlenmiş hal için düğmeye tıklayın")
+        eksik = len(self._orijinal_basarisiz)
+        self.durum.set(
+            "Orijinal gösterim — işlenmiş hal için düğmeye tıklayın"
+            + (f" ({eksik} resim yüklenemedi)" if eksik else "")
+        )
 
     def bilgiler(self):
         """Mesaj özellik penceresi (Outlook 'Özellikler')."""
