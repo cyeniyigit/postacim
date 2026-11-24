@@ -3,6 +3,18 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.21] — 2026-11-24
+
+### Değiştirilen
+- **"Orijinali göster" yeniden tasarlandı:** düğme artık ayrı bir
+  pencerede ham MIME kodu göstermiyor; mail'in **gönderildiği orijinal
+  halini aynı gövde alanında** görüntülüyor. Satır içi (cid) ve uzak
+  (http/https) resimler arka planda indirilip gövdeye gömülür (kurum
+  NTLM resimleri dâhil); düğme orijinal ↔ işlenmiş görünüm arasında
+  geçiş yapar, geri dönüş sunucuya gitmeden yapılır. `script` ve
+  yönlendiren `meta` yine atılır, bozuk etiket/tablo onarımı korunur;
+  düz metin mesajlarda bilgilendirilir.
+
 ## [0.1.20] — 2026-11-24
 
 ### Değiştirilen
