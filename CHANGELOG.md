@@ -3,6 +3,23 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.26] — 2026-11-24
+
+### Düzeltilen
+- **Gövdedeki bağlantılara tıklama gövdeyi beyazlatıyordu:** tıklama
+  işleyicisi (`on_link_click`) yanlış yere (HtmlFrame kabuğunun
+  özniteliğine) atanıyordu; tkinterweb tıklamayı iç parçacığından
+  okuduğu için bağlantı gövdenin içinde gezinmeye çalışıyor, içerik
+  gidiyordu. İşleyici artık yapılandırıcıyla iç parçacıktan verilir;
+  bağlantılar **varsayılan tarayıcıda** açılır (`mailto:` için
+  `xdg-open` yedeği dâhil).
+
+### Değiştirilen
+- **"Resimleri göster" düğmesi kaldırıldı:** resim çubuğu ve sayacı
+  durur; resimler gövdedeki `[resim: …]` yer tutucularına tıklayarak
+  açılır. Sayaç, gizli resim varken "(N gizli — göstermek için [resim:
+  …] üzerine tıklayın)" şeklinde yol gösterir.
+
 ## [0.1.25] — 2026-11-24
 
 ### Düzeltilen

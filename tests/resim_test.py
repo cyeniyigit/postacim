@@ -570,9 +570,17 @@ def _arayuz_denetimi(html_mod: bool):
                 "üretilen HTML'de çözülmemiş img yok",
             )
             # Yer tutucu bağlantısı tıklamaya bağlanmış mı?
+            # (cget: işleyici iç TkinterWeb parçacığına kurulu olmalı —
+            # HtmlFrame özniteliği olarak atamak tıklamaya ulaşmıyordu.)
             kontrol(
-                uygulama.ayrinti.on_link_click == uygulama._html_baglanti_tikla,
+                uygulama.ayrinti.cget("on_link_click") ==
+                uygulama._html_baglanti_tikla,
                 "yer tutucu bağlantısı tıklama işleyicisine bağlı",
+            )
+            kontrol(
+                uygulama.ayrinti.cget("on_link_click") ==
+                uygulama._html_baglanti_tikla,
+                "dış bağlantı işleyicisi de bağlı (tarayıcıda açılır)",
             )
             # request_func: dış ağ kapalı, data: açık
             url, veri, mime, kod = uygulama._govde_istek(
@@ -607,12 +615,13 @@ def _arayuz_denetimi(html_mod: bool):
             "yer tutucunun metni kalkar",
         )
 
-        # "Resimleri göster" → kalanlar (başarısız olan hariç hepsi denenir)
-        uygulama.resim_dugmesi.invoke()
+        # Toplu göster → kalanlar (başarısız olan hariç hepsi denenir);
+        # "Resimleri göster" düğmesi kaldırıldı, toplu yöntem doğrudan çağrılır
+        uygulama.tum_resimleri_goster()
         bekle(1.2)
         kontrol(
             gomulu_sayisi() >= 2,
-            "Resimleri göster ile JPEG resim de görünür (Pillow)",
+            "toplu gösterimle JPEG resim de görünür (Pillow)",
         )
         bekle(1.2)
         kontrol(
@@ -624,8 +633,9 @@ def _arayuz_denetimi(html_mod: bool):
             "kayıt durumları güncellenir",
         )
         kontrol(
-            "disabled" in uygulama.resim_dugmesi.state(),
-            "tümü gösterilince düğme pasifleşir",
+            "gizli" not in uygulama.resim_etiket.cget("text"),
+            f"tümü gösterilince sayaç gizli bildirmez "
+            f"({uygulama.resim_etiket.cget('text')!r})",
         )
 
         # Mesaj değişince eski sonuçlar gövdeye yazılmaz

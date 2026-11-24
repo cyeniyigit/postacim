@@ -1647,3 +1647,37 @@ gereği tahmin bırakılıp 0.1.24'ün teşhis kaydı okundu:
   `_orijinal_basarisiz == []` mı — m1 ve zorlu m3 için.
 - Doğrulama: orijinal.log BOŞ (hiç çözülemedi kaydı yok); run_all.sh
   15/15.
+
+
+## Bağlantı tıklaması beyaz sayfa + "Resimleri göster" düğmesinin kaldırılması (2026-11-24)
+
+**Bildirim:** "mail body de her hangi bir linke tıkladığımda mail body
+nin gösterildiği kısım beyaza dönüşüyor... bu aslında ön tanımlı browser
+ile açılmalı" ve "aynı zamanda tüm resimleri göster butonunu da
+kaldıralım" (kapsam netleştirildi: yalnız düğme).
+
+### Kök neden (tkinterweb 4.25.5 kaynağından)
+- `handlers.py::_handle_link_click` işleyiciyi **iç** `TkinterWeb`
+  parçacığından okur (`self.html.on_link_click`); `ui.py` ise işleyiciyi
+  HtmlFrame kabuğunun düz özniteliğine atıyordu → asla ulaşmıyordu.
+  İç parçacık varsayılan `load_url` ile bağlantıyı gövdenin İÇİNDE
+  yüklemeye çalışıyor (request_func kaynakları engellediğinden beyaz
+  sayfa) — içerik gidiyordu. Önceki test bu atamayı aynı yüzeysel
+  öznitelikten okuduğu için yakalayamamıştı.
+
+### Düzeltmeler (`ui.py`)
+- `on_link_click=self._html_baglanti_tikla` artık `HtmlFrame(...)`
+  yapılandırıcısına verilir (önerilen yol; `_tkinterweb_options` üzerinden
+  iç parçacığa uygulanır). Ölü öznitelik ataması kaldırıldı.
+- `_html_baglanti_tikla`: `webbrowser.open` başarısız olursa (mailto)
+  `xdg-open` yedeği.
+- `resim_dugmesi` kaldırıldı; `_resim_cubugunu_guncelle` yalnız sayaç
+  gösterir: gizli resim varken "(N gizli — göstermek için [resim: …]
+  üzerine tıklayın)". `tum_resimleri_goster` yöntemi durur (testler
+  doğrudan çağırır).
+
+### Testler (hepsi geçti)
+- `tests/resim_test.py`: bağlayıcı denetimi `ayrinti.cget(
+  "on_link_click")` ile iç parçacıktan okunur; toplu gösterim
+  `tum_resimleri_goster()` ile çağrılır; sayaç "gizli" bildirmez denetimi.
+- `run_all.sh`: 15 test — hepsi geçti.

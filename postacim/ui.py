@@ -878,15 +878,11 @@ class Postacim(tk.Tk):
         self.baslik.pack(anchor="w", padx=6, pady=(6, 2))
         # Resim cubugu: govdedeki satir ici resimler icin (Evolution tarzi).
         # Resim yokken paketlenmez; var olunca ayrinti'den once yerlestirilir.
+        # ("Resimleri göster" düğmesi kaldırıldı: resimler [resim: …] yer
+        # tutucularına tıklayarak açılır.)
         self.resim_cubugu = ttk.Frame(sag)
         self.resim_etiket = ttk.Label(self.resim_cubugu, text="")
         self.resim_etiket.pack(side="left", padx=(6, 10))
-        self.resim_dugmesi = ttk.Button(
-            self.resim_cubugu, text="Resimleri göster",
-            image=self.ikon["ek_resim"], compound="left",
-            command=self.tum_resimleri_goster,
-        )
-        self.resim_dugmesi.pack(side="left")
         self.html_modu = HtmlFrame is not None
         # Gövde görüntüleme durumu (zoom / otomatik sığdırma)
         self._gövde_zoom = 1.0
@@ -911,9 +907,13 @@ class Postacim(tk.Tk):
                 horizontal_scrollbar="auto",
                 vertical_scrollbar="auto",
                 request_func=self._govde_istek,
+                # Bağlantı tıklaması İÇ tarayıcıda gezintiye dönüşmemeli:
+                # işleyici yapılandırıcıyla verilir (HtmlFrame özniteliği
+                # olarak atamak iç parçacığa ulaşmadığı için tıklamada
+                # gövde beyaz sayfaya dönüşüyordu).
+                on_link_click=self._html_baglanti_tikla,
             )
             self.ayrinti.pack(fill="both", expand=True, padx=8, pady=4)
-            self.ayrinti.on_link_click = self._html_baglanti_tikla
             self.ayrinti.bind("<Configure>", self._gövde_boyut_degisti)
         else:
             # width=40: PanedWindow'a talep edilen genislik; pencere acildiginda
@@ -3854,7 +3854,9 @@ class Postacim(tk.Tk):
                     self._resim_goster(kayit)
                     return
         elif url.startswith(("http://", "https://", "mailto:")):
-            webbrowser.open(url)
+            if not webbrowser.open(url) and url.startswith("mailto:"):
+                # webbrowser e-posta adreslerini açamaz; sistem varsayılanına bırak
+                subprocess.Popen(["xdg-open", url])
 
     def _govde_istek(self, url, *args, **kw):
         """tkinterweb kaynak isteği: yalnız gömülü `data:` resimlerine izin.
@@ -3934,16 +3936,14 @@ class Postacim(tk.Tk):
         if not toplam:
             self.resim_cubugu.pack_forget()
             return
-        gosterilen = sum(1 for k in self.resim_kayitlari if k["durum"] == "gosterildi")
         kalan = sum(1 for k in self.resim_kayitlari if k["durum"] == "bekliyor")
-        self.resim_etiket.configure(text=f"Bu ileti {toplam} resim içeriyor")
-        self.resim_dugmesi.configure(
-            text=f"Resimleri göster ({kalan})" if kalan else "Resimler gösterildi"
-        )
         if kalan:
-            self.resim_dugmesi.state(["!disabled"])
+            self.resim_etiket.configure(
+                text=f"Bu ileti {toplam} resim içeriyor ({kalan} gizli) — "
+                     "göstermek için [resim: …] üzerine tıklayın"
+            )
         else:
-            self.resim_dugmesi.state(["disabled"])
+            self.resim_etiket.configure(text=f"Bu ileti {toplam} resim içeriyor")
         if not self.resim_cubugu.winfo_ismapped():
             self.resim_cubugu.pack(fill="x", padx=6, pady=(0, 2), before=self.ayrinti)
 
