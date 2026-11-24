@@ -12,6 +12,7 @@ import queue
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -34,6 +35,7 @@ except ImportError:
 
 from .config import Ayarlar, KisiDefteri
 from . import dosya_secici
+from . import guncelleme
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
@@ -136,6 +138,121 @@ TAKVIM_STIL_KOYU: dict = {
 }
 
 
+class Karsilama(tk.Toplevel):
+    """Açılış karşılama penceresi (Outlook/Anaconda tarzı).
+
+    Uygulama simgesi + ad + sürüm; alt kısımda başlatma/güncelleme
+    durumu ve **ilerleme çubuğu** (%). Kenarlığı yok, ekranın ortasında
+    durur; uygulama hazır olunca (ya da güncelleme biterken) kapatılır.
+    """
+
+    ARKA = "#0f3c66"
+    ARKA_KOYU = "#0a2b4c"
+    METIN = "#ffffff"
+    METIN_SOLUK = "#9fc3e8"
+
+    def __init__(self, ana: "Postacim"):
+        super().__init__(ana)
+        self.ana = ana
+        self.overrideredirect(True)
+        self.configure(bg=self.ARKA)
+        self.resizable(False, False)
+        ana.style.configure(
+            "Karşılama.Horizontal.TProgressbar",
+            troughcolor=self.ARKA_KOYU, background="#4aa3ff",
+            borderwidth=0, thickness=10,
+        )
+        govde = tk.Frame(self, bg=self.ARKA, padx=34, pady=26)
+        govde.pack(fill="both", expand=True)
+        logo = tk.PhotoImage(
+            file=os.path.join(
+                os.path.dirname(__file__), "ikonlar", "uygulama_128.png"
+            )
+        )
+        self._logo = logo  # Tk görseli Python tarafında da yaşamalı
+        tk.Label(govde, image=logo, bg=self.ARKA).pack(pady=(4, 8))
+        tk.Label(
+            govde, text=UYGULAMA_ADI, bg=self.ARKA, fg=self.METIN,
+            font=(YAZI_TIPİ, 21, "bold"),
+        ).pack()
+        tk.Label(
+            govde, text=f"sürüm {SURUM}", bg=self.ARKA, fg=self.METIN_SOLUK,
+            font=(YAZI_TIPİ, 10),
+        ).pack(pady=(2, 14))
+        tk.Frame(govde, bg=self.ARKA_KOYU, height=1).pack(fill="x", pady=(0, 14))
+        self.durum_etiket = tk.Label(
+            govde, text="Başlatılıyor…", bg=self.ARKA, fg=self.METIN,
+            font=(YAZI_TIPİ, 10), wraplength=360, justify="center",
+        )
+        self.durum_etiket.pack(fill="x")
+        self.cubuk = ttk.Progressbar(
+            govde, style="Karşılama.Horizontal.TProgressbar",
+            maximum=100, value=0, length=340,
+        )
+        self.cubuk.pack(fill="x", pady=(10, 2))
+        self.dugme_cubugu = tk.Frame(govde, bg=self.ARKA)
+        self.dugme_cubugu.pack(pady=(8, 0))
+        # Konum + üstte kalma: haritalanma sırasında ana pencere üstüne
+        # çıkabildiği için birkaç kez yeniden uygulanır (bkz. _ortala).
+        self.after(20, self._ortala)
+        self.after(300, self._ortala)
+        self.after(800, self._ortala)
+
+    def _ortala(self):
+        """Pencereyi ekranın ortasına yerleştirir (Anaconda tarzı).
+
+        Konum Xvfb/bazı pencerelerde haritalanma sırasında sıfırlanabildiği
+        için üstte kalma (lift) yalnız pencere **görünürken** yapılır.
+        """
+        try:
+            self.update_idletasks()
+            genislik = self.winfo_reqwidth() or 440
+            yukseklik = self.winfo_reqheight() or 330
+            x = max(0, (self.winfo_screenwidth() - genislik) // 2)
+            y = max(0, (self.winfo_screenheight() - yukseklik) // 2 - 40)
+            if self.geometry() != f"{genislik}x{yukseklik}+{x}+{y}":
+                self.geometry(f"{genislik}x{yukseklik}+{x}+{y}")
+            if self.winfo_viewable():
+                self.lift()
+        except tk.TclError:
+            pass
+
+    def durum(self, metin: str, yuzde: int | None = None):
+        """Durum metnini ve ilerleme yüzdesini (%0–100) günceller."""
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        self.durum_etiket.configure(text=metin)
+        if yuzde is not None:
+            self.cubuk.configure(value=max(0, min(100, yuzde)))
+
+    def bitti(self, surum: str):
+        """Güncelleme kuruldu: çubuk %100 + Yeniden Başlat düğmeleri."""
+        self.durum(
+            f"Güncelleme kuruldu — sürüm {surum}\n"
+            "Yeniden başlatınca yeni sürüm etkinleşir.", 100,
+        )
+        for widget in self.dugme_cubugu.winfo_children():
+            widget.destroy()
+        ttk.Button(
+            self.dugme_cubugu, text="Yeniden Başlat",
+            command=self.ana._guncelleme_yeniden_baslat,
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            self.dugme_cubugu, text="Kapat",
+            command=self.kapat,
+        ).pack(side="left", padx=4)
+
+    def kapat(self):
+        try:
+            if self.winfo_exists():
+                self.destroy()
+        except tk.TclError:
+            pass
+
+
 class Postacim(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -234,6 +351,14 @@ class Postacim(tk.Tk):
             sv_ttk.set_theme(self.tema, self)
         self.style = ttk.Style(self)
 
+        # Karşılama penceresi (splash): arayüz kurulurken ve varsa güncelleme
+        # indirilirken ekranın ortasında ilerlemeyi gösterir.
+        self._guncelleme_sureci = False     # denetim/indirme/kurulum sürüyor mu
+        self._guncelleme_kurulu: str | None = None  # kurulan yeni sürüm (varsa)
+        self.karsilama = Karsilama(self)
+        self.karsilama.durum("Postacım başlatılıyor…")
+        self.update_idletasks()
+
         self._arayuz_kur()
         self._kuyruk_yokla()
         self.after(120, self._kuyruk_yokla)
@@ -250,6 +375,10 @@ class Postacim(tk.Tk):
         self.after(1500, self._diger_hesaplari_yukle)
         # Yeni mail bildirimi (otomatik yenilemeden bağımsız)
         self.after(2500, self._bildirim_baslat)
+        # Karşılama penceresi güncelleme yoksa 8 saniyede kapanır
+        self.after(8000, self._karsilama_zamani_doldu)
+        # GitHub sürüm denetimi (izin varsa arka planda indir-kur)
+        self.after(600, self._guncelleme_baslat)
         self._otomatik_baslat()
 
     def _baslik_metni(self, hesap: dict) -> str:
@@ -513,6 +642,18 @@ class Postacim(tk.Tk):
             command=self.baglanti_bilgisi,
         )
         yardim.add_command(
+            label="Güncellemeleri Kontrol Et…", image=self.ikon.get("yenile"),
+            compound="left", command=self._guncelleme_elle,
+        )
+        self.guncelleme_degisken = tk.BooleanVar(
+            value=bool(self.ayarlar.al("guncelleme_otomatik", True))
+        )
+        yardim.add_checkbutton(
+            label="Otomatik güncelleme (açılışta)",
+            variable=self.guncelleme_degisken,
+            command=self._guncelleme_oto_degisti,
+        )
+        yardim.add_command(
             label="Hakkında", image=self.ikon["hakkinda"], compound="left",
             command=self.hakkinda,
         )
@@ -764,6 +905,12 @@ class Postacim(tk.Tk):
             variable=self._gövde_oto_sigdir_degisken,
             command=self._gövde_oto_sigdir_degisti,
         ).pack(side="left", padx=(8, 0))
+        self.orijinal_dugme = ttk.Button(
+            self.govde_arac, text="Orijinali göster",
+            image=self.ikon["ek_metin"], compound="left",
+            command=self.orijinal_goster,
+        )
+        self.orijinal_dugme.pack(side="left", padx=(8, 0))
         ttk.Label(
             self.govde_arac, text="Ctrl+tekerlek: yakınlaştır",
             foreground="#666666",
@@ -2507,6 +2654,20 @@ class Postacim(tk.Tk):
             self._ek_kaydet(veri[1], veri[2])
         elif tur == "ek_toplu":
             self._ekleri_indir_goster(veri[1], veri[2], veri[3])
+        elif tur == "orijinal":
+            self._orijinal_pencere(veri[1], veri[2])
+        elif tur == "guncelleme_durum":
+            self.durum.set(veri[1])
+            if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
+                self.karsilama.durum(veri[1], veri[2])
+        elif tur == "guncelleme_bitti":
+            self._guncelleme_bitti_isle(veri[1])
+        elif tur == "guncelleme_hata":
+            self._guncelleme_sureci = False
+            self.durum.set(f"Güncelleme başarısız: {veri[1]}")
+            if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
+                self.karsilama.durum(f"Güncelleme başarısız: {veri[1]}")
+                self.karsilama.after(6000, self.karsilama.kapat)
         elif tur == "basarili":
             self.durum.set(veri[1])
         elif tur == "yenile":
@@ -2526,6 +2687,122 @@ class Postacim(tk.Tk):
         if self.liste.selection():
             i = self.liste.index(self.liste.selection()[0])
             self.liste.set(i, "durum", "" if deger else "●")
+
+    # ------------------------------------------------------- karşılama + güncelleme
+
+    def _karsilama_kapat(self):
+        """Karşılama penceresini kapatır; güncelleme sürerken bekler."""
+        if self._guncelleme_sureci or self._guncelleme_kurulu:
+            return
+        if getattr(self, "karsilama", None):
+            self.karsilama.kapat()
+
+    def _karsilama_zamani_doldu(self):
+        """Açılışta 8 saniye içinde hazır olunmadıysa karşılama yine kapansın."""
+        self._karsilama_kapat()
+
+    def _guncelleme_baslat(self):
+        """Açılışta GitHub sürüm denetimini (izin varsa) arka planda başlatır."""
+        if not guncelleme.otomatik_izin(self.ayarlar):
+            return  # geliştirme ortamı / kapalı tercih / POSTACIM_GUNCELLEME=0
+        self._guncelleme_sureci = True
+        if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
+            self.karsilama.durum("Güncelleme denetleniyor…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._guncelleme_denetle, False),
+            daemon=True,
+        ).start()
+
+    def _guncelleme_elle(self):
+        """Yardım → Güncellemeleri Kontrol Et… (yeni varsa indir-kur)."""
+        if self._guncelleme_sureci:
+            self.durum.set("Güncelleme denetimi zaten sürüyor…")
+            return
+        self._guncelleme_sureci = True
+        self.durum.set("Güncelleme denetleniyor…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._guncelleme_denetle, True),
+            daemon=True,
+        ).start()
+
+    def _guncelleme_denetle(self, elle: bool = False):
+        """GitHub'daki sürümü sorgular; yeni varsa indirip kurar (arka plan).
+
+        İlerleme kuyruğa `guncelleme_durum` olarak yazılır; karşılama
+        penceresi açıkken çubukta % gösterilir.
+        """
+        try:
+            son, adres = guncelleme.son_surum()
+            if not son:
+                if elle:
+                    return ("uyari",
+                            "Güncelleme denetlenemedi — bağlantıyı kontrol edin.")
+                return ("guncelleme_bitti", "")
+            mevcut = guncelleme.mevcut_surum()
+            if not guncelleme.daha_yeni(son, mevcut):
+                if elle:
+                    return ("uyari", f"Postacım güncel (sürüm {mevcut}).")
+                return ("guncelleme_bitti", "")
+
+            def indir_yuzde(yuklenen, toplam):
+                oran = int(yuklenen * 70 / toplam)
+                self.is_kuyrugu.put(("ok", (
+                    "guncelleme_durum",
+                    f"{son} indiriliyor… %{oran}", oran,
+                )))
+
+            def kur_asama(ad, oran):
+                self.is_kuyrugu.put(("ok", (
+                    "guncelleme_durum", f"{ad} %{oran}", oran,
+                )))
+
+            arsiv = guncelleme.indir(adres, tempfile.gettempdir(), indir_yuzde)
+            try:
+                guncelleme.kur(arsiv, son, kur_asama)
+            finally:
+                try:
+                    os.remove(arsiv)
+                except OSError:
+                    pass
+            return ("guncelleme_bitti", son)
+        except guncelleme.GuncellemeHatasi as exc:
+            return ("guncelleme_hata", str(exc))
+        except Exception as exc:
+            return ("guncelleme_hata", f"Beklenmeyen hata: {exc}")
+
+    def _guncelleme_bitti_isle(self, surum: str):
+        """Denetim/kurulum sonucu: kuruldu ekranı ya da sessiz kapanış."""
+        self._guncelleme_sureci = False
+        if not surum:
+            self._karsilama_kapat()
+            return
+        self._guncelleme_kurulu = surum
+        metin = (f"Güncelleme kuruldu (sürüm {surum}) — "
+                 "yeniden başlatınca etkinleşir")
+        self.durum.set(metin)
+        if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
+            self.karsilama.bitti(surum)
+        else:
+            if messagebox.askyesno(
+                "Güncelleme kuruldu",
+                f"Postacım {surum} kuruldu.\nYeniden başlatılsın mı?",
+            ):
+                self._guncelleme_yeniden_baslat()
+
+    def _guncelleme_yeniden_baslat(self):
+        """Uygulamayı kurulan yeni sürümle yeniden başlatır (aynı komutla)."""
+        try:
+            self.ayarlar.kaydet()
+        except Exception:
+            pass
+        guncelleme.yeniden_baslat()
+
+    def _guncelleme_oto_degisti(self):
+        """Yardım menüsündeki 'Otomatik güncelleme' işaretini kaydeder."""
+        self.ayarlar.ayarla(
+            "guncelleme_otomatik", bool(self.guncelleme_degisken.get())
+        )
+        self.ayarlar.kaydet()
 
     # ------------------------------------------------------------------ eylemler
 
@@ -3115,6 +3392,9 @@ class Postacim(tk.Tk):
 
     def _klasorleri_doldur(self, klasorler, mesajlari_yukle: bool = True, durum_yaz: bool = True):
         """Aktif hesabın klasörlerini yazar ve tüm ağacı yeniden kurar."""
+        # İlk klasör listesi geldi → uygulama hazır; karşılama penceresi
+        # kapansın (güncelleme sürüyorsa bekler).
+        self._karsilama_kapat()
         self.klasor_liste = list(klasorler)
         self._hesap_klasorleri[self.aktif_id] = list(klasorler)
         self._agaci_yenile()
@@ -4179,6 +4459,53 @@ class Postacim(tk.Tk):
         with open(hedef, "wb") as f:
             f.write(veri)
         return ("basarili", f"Kaydedildi: {hedef} ({len(veri)} bayt)")
+
+    def orijinal_goster(self):
+        """Mesajın orijinal (ham MIME / .eml) içeriğini pencerede gösterir."""
+        if not self.secili:
+            self.durum.set("Önce bir mesaj seçin")
+            return
+        mesaj = self.secili
+        self.durum.set("Orijinal içerik alınıyor…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._orijinal_cek, mesaj), daemon=True
+        ).start()
+
+    def _orijinal_cek(self, mesaj):
+        return ("orijinal", mesaj, self.istemci.mesaj_mime(mesaj.item_id))
+
+    def _orijinal_pencere(self, mesaj, veri: bytes):
+        """Ham MIME kaynağını (Kaynağı Görüntüle tarzı) pencerede gösterir."""
+        arka, on = self._tema_renkleri()
+        pencere = tk.Toplevel(self)
+        pencere.title(f"Orijinal — {mesaj.konu or '(konu yok)'}")
+        pencere.transient(self)
+        self._pencere_simgesi(pencere)
+        pencere.geometry("820x620")
+        cerçeve = ttk.Frame(pencere)
+        cerçeve.pack(fill="both", expand=True)
+        metin = tk.Text(
+            cerçeve, wrap="none", padx=10, pady=8, relief="flat",
+            bg=arka, fg=on, insertbackground=on,
+            font=("TkFixedFont", 9),
+        )
+        kaydirma_y = ttk.Scrollbar(cerçeve, orient="vertical", command=metin.yview)
+        kaydirma_x = ttk.Scrollbar(pencere, orient="horizontal", command=metin.xview)
+        metin.configure(yscrollcommand=kaydirma_y.set, xscrollcommand=kaydirma_x.set)
+        kaydirma_y.pack(side="right", fill="y")
+        metin.pack(side="left", fill="both", expand=True)
+        kaydirma_x.pack(fill="x")
+        kaynak = veri.decode("utf-8", errors="replace")
+        SINIR = 2_000_000
+        if len(kaynak) > SINIR:
+            kaynak = kaynak[:SINIR] + (
+                f"\n\n… (mesaj büyük; ilk {SINIR} karakter gösterildi — "
+                "tamamı için sağ tuş → Farklı Kaydet (.eml)"
+            )
+        metin.insert("1.0", kaynak)
+        metin.configure(state="disabled")
+        ttk.Button(pencere, text="Kapat", command=pencere.destroy).pack(pady=6)
+        pencere.bind("<Escape>", lambda e: pencere.destroy())
 
     def bilgiler(self):
         """Mesaj özellik penceresi (Outlook 'Özellikler')."""

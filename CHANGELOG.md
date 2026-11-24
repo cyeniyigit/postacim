@@ -3,6 +3,56 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.17] — 2026-11-24
+
+### Eklenen
+- **"Orijinali göster" düğmesi:** gövde araç çubuğuna (Gövde: −/+ , Sığdır
+  satırına) eklendi. Tıklandığında mesajın **ham MIME kaynağı** (.eml —
+  başlıklar + gövde + ekler) ayrı bir pencerede monospace yazı tipiyle
+  gösterilir (Thunderbird'ün "Kaynağı Görüntüle"si tarzı). İçerik arka
+  planda `mesaj_mime` ile çekilir (IMAP `BODY.PEEK[]` / EWS `MimeContent`).
+  - Büyük mesajlarda arayüzü kilitlememek için pencerede ilk 2 MB
+    gösterilir; not olarak "Farklı Kaydet (.eml)" yoluna işaret edilir.
+  - Mesaj seçili değilken tıklama hata vermez; durum çubuğu bilgilendirir.
+  - `Esc` ya da "Kapat" ile pencere kapanır.
+- **Açılış karşılama penceresi (splash):** uygulama açılırken ekranın
+  ortasında logolu, "Postacım + sürüm" yazan koyu mavi bir karşılama
+  penceresi görünür (Outlook/Anaconda tarzı); alt kısmında durum metni ve
+  **ilerleme çubuğu (%)** vardır. Uygulama hazır olunca (ilk klasör
+  listesi) ya da 8 saniyede kapanır; güncelleme sürerken açık kalır.
+- **Kendini güncelleme (otomatik):** açılışta GitHub'daki en yeni sürüm
+  arka planda denetlenir (Releases API; olmazsa `main` dalındaki
+  `__init__.py` okunur). Kurulu sürümden yeniyse **kullanıcı bir şey
+  indirmeden** güncelleme kurulur:
+  1. arşiv akışla indirilir — karşılama penceresinde
+     "0.1.18 indiriliyor… %N" gösterilir (Content-Length'e göre gerçek %),
+  2. arşiv ayıklanır, yeni paket çalışan sanal ortama (`pip install`)
+     ve gereksinimleri kurulur, aşamalar % cinsinden gösterilir,
+  3. kurulum taze bir süreçte doğrulanır (sürüm uyuşmazsa hata).
+  Bitince karşılama penceresinde **"Yeniden Başlat"** düğmesi çıkar;
+  uygulama aynı komutla (`python -m postacim`) yeni sürümle yeniden açılır.
+  Karşılama penceresi kapalıysa kurulum bitince yeniden başlatma sorulur.
+- **Yardım menüsü → "Güncellemeleri Kontrol Et…"** (elle denetim; sonuç
+  iletişim kutusuyla bildirilir) ve **"Otomatik güncelleme (açılışta)"**
+  işareti (terci `hesap.json`'da saklanır, varsayılan açık).
+- **Kurallar:** geliştirme ortamından (kaynaktan `.venv`) çalışırken
+  otomatik denetim yapılmaz (geliştiricinin ortamına sessiz kurulum
+  olmasın); `POSTACIM_GUNCELLEME=0` ortam değişkeni denetimi kapatır.
+  Ağ yoksa denetim sessizce atlanır — açılış hiçbir koşulda engellenmez.
+
+### Testler
+- `tests/orijinal_goster_test.py` (yeni, çevrimdışı): düğme varlığı,
+  mesaj seçilmeden tıklamada uyarı, tıklamada `mesaj_mime` istemciden
+  çağrılır, "Orijinal — <konu>" penceresi açılır, ham başlıklar/gövde
+  görünür, büyük mesaj 2 MB'de sınırlanır ve not eklenir.
+- `tests/guncelleme_test.py` (yeni, çevrimdışı): sürüm karşılaştırma,
+  API/yedek/ağ-yok yolları, akışla indirme + %, arşiv ayıklama, sahte
+  venv python ile `kur` aşamaları + doğrulama, `otomatik_izin` kuralları.
+- `tests/karsilama_test.py` (yeni, Xvfb): karşılama penceresi (logo,
+  sürüm etiketi, ekran ortası), % çubuğu, "guncelleme_durum/bitti/hata"
+  kuyruk sonuçları, hazır olunca kapanış, elle denetim akışı.
+  Üçü de `run_all.sh`a eklendi.
+
 ## [0.1.15] — 2026-11-23
 
 ### Düzeltmeler

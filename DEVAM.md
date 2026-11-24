@@ -1337,3 +1337,73 @@ ErrorItemNotFound."
 - `ews_klasor_test.py`: `sync_yaniti` ChangeKey'li; toplu HardDelete
   (Id+ChangeKey); toplu başarısızsa tek tek (X1/X3 silinir, X2 atlanır →
   sayı 2); hepsi yok → okunur hata; kısıt/önbellek kontrolleri.
+
+## Karşılama penceresi + kendini güncelleme (2026-11-24)
+
+**Talep:** "GitHub versiyonu güncellendiğinde otomatik olarak programda
+kullanıcının indirmesine gerek kalmadan kendini güncellemesi gerekir.
+Ancak açılırken ortada bir UI olmalı karşılama penceresi gibi, Outlook ya
+da Anaconda gibi resimli. Ortadaki karşılama UI'sinde güncelleme yapıp
+yapmadığı, neyi güncellediği ve % kaçının tamamlandığı gösterilmeli."
+
+### Yeni modül: `guncelleme.py`
+- `son_surum()`: Releases API (`tag_name`); boşsa yedek olarak `main`
+  dalındaki `postacim/__init__.py` okunur; ikisi de olmazsa `(None, None)`
+  (hata fırlatmaz — açılış engellenmez).
+- `daha_yeni(yeni, eski)`: nokta ayrık sayısal karşılaştırma ("v" öneki atılır).
+- `indir(adres, dizin, ilerleme)`: `requests.get(stream)` + `iter_content`;
+  `ilerleme(yuklenen, toplam)` — Content-Length yoksa çağrılmaz.
+- `_arsiv_ayikla`: tar.gz → geçici dizin; `postacim/__init__.py` içeren
+  kök aranır (GitHub tarball'ı `postacim-main/` altında açılır).
+- `kur(arsiv, hedef_surum, ilerleme, venv_python)`: aşama yüzdesi 0–100
+  (ayıklama 75 → pip 85 → gereksinim 92 → doğrulama 97 → tamam 100);
+  `pip install --no-deps <kaynak>` + `pip install -r requirements.txt`;
+  doğrulama **taze süreçte** `import postacim; print(__version__)` ile
+  (modül önbelleği yanıltmasın), uyuşmazsa `GuncellemeHatasi`.
+- `yeniden_baslat()`: `os.execv(sys.executable, [python, "-m", "postacim"])`
+  — paket göreli içe aktarma kullandığı için `-m` zorunlu.
+- `otomatik_izin(ayarlar)`: tercih (`guncelleme_otomatik`, varsayılan açık)
+  × `POSTACIM_GUNCELLEME` ortam değişkeni × **geliştirme koruması**:
+  `sys.executable` `.../share/postacim/venv/bin` altında değilse
+  (kaynaktan `.venv`) otomatik denetim yapılmaz.
+
+### `ui.py`
+- **`Karsilama(tk.Toplevel)`**: overrideredirect, koyu mavi panel
+  (#0f3c66), paket içi `ikonlar/uygulama_128.png` logosu, ad, sürüm,
+  durum etiketi + `Karşılama.Horizontal.TProgressbar` (0–100);
+  `_ortala` ekran ortası (20/300/800 ms'de yeniden — haritalanma
+  sırasında konum sıfırlanabildiği için); `durum(metin, yuzde)`,
+  `bitti(surum)` → %100 + "Yeniden Başlat"/"Kapat" düğmeleri, `kapat()`.
+- `Postacim.__init__`: karşılama arayüz kurulmadan ÖNCE oluşturulur ve
+  `update_idletasks` ile çizilir; `after(600, _guncelleme_baslat)`,
+  `after(8000, _karsilama_zamani_doldu)` (yedek kapanış).
+- İlk `_klasorleri_doldur` → `_karsilama_kapat()` (güncelleme sürerken /
+  kurulmuşsa beklemez — `_guncelleme_sureci` / `_guncelleme_kurulu` korur).
+- `_guncelleme_denetle(elle)`: denetim → yeni sürüm varsa indir-kur;
+  ilerleme `is_kuyrugu`'na `("guncelleme_durum", metin, %)` olarak yazılır
+  (karşılama penceresi + durum çubuğu). Bitiş: `guncelleme_bitti`
+  (kuruldu ekranı ya da pencere kapalıysa `askyesno` yeniden başlatma).
+- Yardım menüsü: "Güncellemeleri Kontrol Et…" + "Otomatik güncelleme
+  (açılışta)" işareti (terci `hesap.json`'a yazılır).
+
+### Bilinen notlar
+- Xvfb'de `attributes("-topmost")` / erken `lift()` overrideredirect
+  pencerenin konumunu (0,0)'a sıfırlıyor — lift yalnız `winfo_viewable()`
+  olduktan sonra yapılıyor; konum 20/300/800 ms'de yeniden uygulanıyor.
+- Karşılama "Güncelleme denetleniyor…" → indiriliyor (0–%70) → kurulum
+  aşamaları (75–%100) sırasını izler; "ne yi güncellediği" aşama adında.
+- Güncelleme sürerken kullanıcı ana pencereyi kullanmaya devam edebilir;
+  kurulum bitince bilgi durum çubuğunda ve pencerede kalır.
+- GitHub API'si hız sınırına girerse yedek raw okuma devrede; ağ yoksa
+  sessiz atlanır (durum çubuğunda "denetlenemedi" görünmez, denetim yapılmaz).
+
+### Testler (hepsi geçti)
+- `tests/guncelleme_test.py` (çevrimdışı, GUI'siz): karşılaştırma, API/
+  yedek/ağ-yok, indirme + %, arşiv ayıklama (+paketsiz hata), sahte venv
+  python ile `kur` (aşama yüzdesi artan, pip çağrıları kaydı, doğrulama
+  uyuşmazlığı), `otomatik_izin` üç kuralı.
+- `tests/karsilama_test.py` (Xvfb): pencere açık, logo, sürüm etiketi,
+  ekran ortası, hazır olunca kapanış, %42 çubuk, bitti → düğmeler +
+  `_guncelleme_kurulu`, hata metni, elle denetim akışı (sahte modül ile
+  indirme-kurulum ve yeniden başlatma sorusu).
+- `run_all.sh`: 15 test — hepsi geçti.

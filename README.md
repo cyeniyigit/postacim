@@ -69,6 +69,17 @@ cd postacim
 
 Sonra terminalden `postacim` yazıp çalıştırabilir ya da menüden açabilirsiniz.
 
+> **Kendini güncelleme:** Açılışta uygulama ekranın ortasında logolu bir
+> karşılama penceresi gösterir ve GitHub'daki en yeni sürümü arka planda
+> denetler. Yeni sürüm çıktıysa **indirme + kurulum otomatik yapılır** —
+> kullanıcı bir şey indirmaz; karşılama penceresi indirilen aşamayı ve
+> **% ilerlemeyi** gösterir. Kurulum bitince **"Yeniden Başlat"** düğmesi
+> çıkar; yeni sürüm yeniden başlatınca etkinleşir. Elle denetim: Yardım →
+> **Güncellemeleri Kontrol Et…**. Otomatik denetim Yardım menüsündeki
+> "Otomatik güncelleme" işaretiyle kapatılabilir. (Geliştirme ortamından
+> — kaynaktan — çalışırken otomatik denetim yapılmaz; `POSTACIM_GUNCELLEME=0`
+> ile de kapatılabilir.)
+
 > **Kurulumdan sonra Postacım klasörünü silebilirsiniz.** Kurulum, uygulamayı
 > sanal ortama kopyalar; menüdeki girdi kaynak klasöre bağlı değildir.
 
@@ -330,6 +341,9 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   indir"; aynı adlı dosyalar ` (1)`, ` (2)` eklenerek korunur. Listede
   **uzantıya özel renkli sayfa ikonu** (PDF/Word/Excel/PowerPoint/ZIP/
   resim/metin/e-posta/video/ses — uzantı bilinmeyenler genel sayfa)
+- **Orijinali göster:** gövde araç çubuğundaki düğme mesajın **ham MIME
+  kaynağını** (.eml — başlıklar + gövde + ekler) ayrı pencerede gösterir
+  (Thunderbird'ün "Kaynağı Görüntüle"si tarzı); büyük mesajlarda ilk 2 MB
 - **Takvim (CalDAV + EWS):** Ay/Hafta/Gün görünümleri, ajanda paneli, yeni
   randevu penceresi (konum, açıklama, takvim hesabı seçimi, **tekrarlama**),
   **tekrarlayan olayların (RRULE) genişletilmesi**, randevu tamamlandı işareti,
@@ -368,6 +382,7 @@ postacim/
   caldav.py    CalDAV istemcisi (keşif, randevu okuma/yazma/silme, ICS üretimi)
   tekrar.py    RRULE ayrıştırma + tekrar üretimi (takvim genişletme)
   config.py    ayarların saklanması — çoklu hesap, takvim hesapları, göç (0600)
+  guncelleme.py otomatik güncelleme (GitHub sürüm denetimi, indir-kur, yeniden başlat)
   ui.py        Tkinter arayüzü (hesap ağacı, hesap penceresi, takvim)
   ikonlar/     düğme ikonları (PNG, 20x20)
   __main__.py  giriş noktası
