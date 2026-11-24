@@ -604,6 +604,17 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   "Mavi" seçeneği; takvim de koyu palete geçer. Tercih hesap.json'da
   saklanır.
 
+## [0.1.32] — 2026-11-24
+
+### Düzeltilen
+- **"Mavi" temada siyah/uyumsuz parçalar:** tema artık sv_ttk koyu
+  temasının üzerine parça parça yamalanmıyor; clam tabanlı **tam ttk
+  teması** olarak tanımlı (`MAVI_TEMA_AYARLARI`) — tüm paneller,
+  listeler, giriş alanları, sekmeler, kaydırma çubukları, combobox
+  açılır listeleri ve kök pencere paletten renk alıyor.
+- Rüzgâr yönü pusula çevirisi panele ve ayrıntı penceresine ortak
+  yardımcıyla yapılır.
+
 ## [0.1.31] — 2026-11-24
 
 ### Düzeltilen / Değiştirilen

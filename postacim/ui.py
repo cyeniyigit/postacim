@@ -343,6 +343,103 @@ class Karsilama(tk.Toplevel):
             pass
 
 
+# "mavi" tema paleti (Visual Studio tarzı koyu lacivert)
+MAVI_PALET = {
+    "arka": "#0d2137",      # kök/çerçeve zemini
+    "orta": "#143653",      # satır/panel/sekmeler
+    "giris": "#0a1c30",     # giriş alanları, başlıklar
+    "kenar": "#1b4a75",     # kenarlık/aktif yüzey
+    "vurgu": "#2b6cb0",     # seçim vurgusu
+    "vurgu_metin": "#ffffff",
+    "metin": "#e6eef7",
+    "soluk": "#8fb0cf",
+}
+
+MAVI_TEMA_AYARLARI = {
+    ".": {"configure": {
+        "background": "#0d2137", "foreground": "#e6eef7",
+        "fieldbackground": "#0d2137", "bordercolor": "#1b4a75",
+        "lightcolor": "#1b4a75", "darkcolor": "#1b4a75",
+        "troughcolor": "#143653", "insertcolor": "#e6eef7",
+        "selectbackground": "#2b6cb0", "selectforeground": "#ffffff"}},
+    "TFrame": {"configure": {"background": "#0d2137"}},
+    "TLabel": {"configure": {"background": "#0d2137",
+                             "foreground": "#e6eef7"}},
+    "TButton": {"configure": {"background": "#143653",
+                              "foreground": "#e6eef7",
+                              "bordercolor": "#1b4a75",
+                              "lightcolor": "#143653",
+                              "darkcolor": "#143653",
+                              "padding": (8, 4)},
+                "map": {"background": [("active", "#1b4a75"),
+                                       ("pressed", "#2b6cb0")],
+                        "foreground": [("disabled", "#8fb0cf")]}},
+    "TEntry": {"configure": {"fieldbackground": "#0a1c30",
+                             "foreground": "#e6eef7",
+                             "insertcolor": "#e6eef7",
+                             "bordercolor": "#1b4a75",
+                             "lightcolor": "#1b4a75",
+                             "darkcolor": "#1b4a75"},
+               "map": {"fieldbackground": [("readonly", "#143653")]}},
+    "TCombobox": {"configure": {"fieldbackground": "#0a1c30",
+                                "background": "#143653",
+                                "foreground": "#e6eef7",
+                                "arrowcolor": "#e6eef7",
+                                "bordercolor": "#1b4a75",
+                                "lightcolor": "#1b4a75",
+                                "darkcolor": "#1b4a75"}},
+    "TSpinbox": {"configure": {"fieldbackground": "#0a1c30",
+                               "foreground": "#e6eef7",
+                               "arrowcolor": "#e6eef7",
+                               "bordercolor": "#1b4a75",
+                               "lightcolor": "#1b4a75",
+                               "darkcolor": "#1b4a75"}},
+    "TNotebook": {"configure": {"background": "#0d2137",
+                                "bordercolor": "#1b4a75",
+                                "lightcolor": "#0d2137",
+                                "darkcolor": "#0d2137",
+                                "tabmargins": [4, 4, 4, 0]}},
+    "TNotebook.Tab": {"configure": {"background": "#143653",
+                                    "foreground": "#e6eef7",
+                                    "padding": (14, 6)},
+                      "map": {"background": [("selected", "#1b4a75")],
+                              "foreground": [("selected", "#ffffff")]}},
+    "Treeview": {"configure": {"background": "#143653",
+                               "fieldbackground": "#143653",
+                               "foreground": "#e6eef7",
+                               "bordercolor": "#0d2137"},
+                 "map": {"background": [("selected", "#2b6cb0")],
+                         "foreground": [("selected", "#ffffff")]}},
+    "Treeview.Heading": {"configure": {"background": "#0a1c30",
+                                       "foreground": "#e6eef7",
+                                       "bordercolor": "#1b4a75",
+                                       "relief": "flat"},
+                         "map": {"background": [("active", "#1b4a75")]}},
+    "TPanedwindow": {"configure": {"background": "#0d2137"}},
+    "TScrollbar": {"configure": {"background": "#143653",
+                                 "troughcolor": "#0d2137",
+                                 "bordercolor": "#0d2137",
+                                 "arrowcolor": "#e6eef7"},
+                   "map": {"background": [("active", "#1b4a75")]}},
+    "TProgressbar": {"configure": {"background": "#2b6cb0",
+                                   "troughcolor": "#0a1c30",
+                                   "bordercolor": "#0d2137",
+                                   "lightcolor": "#2b6cb0",
+                                   "darkcolor": "#2b6cb0"}},
+    "TCheckbutton": {"configure": {"background": "#0d2137",
+                                   "foreground": "#e6eef7"},
+                     "map": {"background": [("active", "#0d2137")]}},
+    "TRadiobutton": {"configure": {"background": "#0d2137",
+                                   "foreground": "#e6eef7"},
+                     "map": {"background": [("active", "#0d2137")]}},
+    "TLabelframe": {"configure": {"background": "#0d2137",
+                                  "foreground": "#e6eef7",
+                                  "bordercolor": "#1b4a75"}},
+    "TLabelframe.Label": {"configure": {"background": "#0d2137",
+                                        "foreground": "#e6eef7"}},
+}
+
+
 class Postacim(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -361,7 +458,7 @@ class Postacim(tk.Tk):
         aktif = self.ayarlar.aktif_hesap() or {}
         # ResolveNames yalnız Exchange (EWS) hesabında var; IMAP'ta kişilerden önerilir
         self.cozum_yok = aktif.get("tur") != "ews"
-        self.tema = self.ayarlar.al("tema", "light")
+        self.tema = self.ayarlar.al("tema", "dark")
         self.istemci = None
         self._istemciler: dict = {}          # hesap_id → bağlı istemci (önbellek)
         self._hesap_klasorleri: dict = {}    # hesap_id → [Klasor] (ağaç için)
@@ -440,10 +537,11 @@ class Postacim(tk.Tk):
         self._hava_veri = None         # (il, ilce, merkez, sondurum, tahmin)
 
         # Tema widget'lar kurulmadan uygulanmali
-        if sv_ttk is not None:
-            # "mavi" teması sv_ttk koyu taban + lacivert palet uygular
-            sv_ttk.set_theme("dark" if self.tema == "mavi" else self.tema, self)
         self.style = ttk.Style(self)
+        if self.tema == "mavi":
+            self._mavi_tema_uygula()
+        elif sv_ttk is not None:
+            sv_ttk.set_theme(self.tema, self)
 
         # Karşılama penceresi (splash): arayüz kurulurken ve varsa güncelleme
         # indirilirken ekranın ortasında ilerlemeyi gösterir.
@@ -557,60 +655,12 @@ class Postacim(tk.Tk):
 
         arka, on = self._tema_renkleri()
         vurgu = self._vurgu_rengi()
-        # "mavi" teması: Visual Studio tarzı koyu lacivert palet
-        # (sv_ttk koyu tabanının üzerine özel renkler uygulanır).
+        # "mavi" teması: clam tabanlı tam palet etkinleştirilir
         if self.tema == "mavi":
-            MAVI_ARKA = "#0d2137"
-            MAVI_ORTA = "#143653"
-            MAVI_METIN = "#e6eef7"
-            MAVI_VURGU = "#2b6cb0"
-            for ad, secenekler in (
-                ("TFrame", {"background": MAVI_ARKA}),
-                ("TLabel", {"background": MAVI_ARKA,
-                            "foreground": MAVI_METIN}),
-                ("TButton", {"background": MAVI_ORTA,
-                             "foreground": MAVI_METIN}),
-                ("TEntry", {"fieldbackground": MAVI_ORTA,
-                            "foreground": MAVI_METIN,
-                            "insertcolor": MAVI_METIN}),
-                ("TCombobox", {"fieldbackground": MAVI_ORTA,
-                               "foreground": MAVI_METIN,
-                               "background": MAVI_ORTA}),
-                ("TNotebook", {"background": MAVI_ARKA, "borderwidth": 0}),
-                ("TNotebook.Tab", {"background": MAVI_ORTA,
-                                   "foreground": MAVI_METIN,
-                                   "padding": (14, 6)}),
-                ("TPanedwindow", {"background": MAVI_ARKA}),
-                ("TLabelframe", {"background": MAVI_ARKA,
-                                 "foreground": MAVI_METIN}),
-                ("TLabelframe.Label", {"background": MAVI_ARKA,
-                                       "foreground": MAVI_METIN}),
-                ("TCheckbutton", {"background": MAVI_ARKA,
-                                  "foreground": MAVI_METIN}),
-                ("TRadiobutton", {"background": MAVI_ARKA,
-                                  "foreground": MAVI_METIN}),
-            ):
-                try:
-                    self.style.configure(ad, **secenekler)
-                except tk.TclError:
-                    pass
-            try:
-                self.style.configure(
-                    "Treeview", background=MAVI_ORTA,
-                    fieldbackground=MAVI_ARKA, foreground=MAVI_METIN)
-                self.style.map(
-                    "Treeview",
-                    background=[("selected", MAVI_VURGU)],
-                    foreground=[("selected", "#ffffff")])
-                self.style.map(
-                    "TButton", background=[("active", "#1b4a75")])
-                self.style.map(
-                    "TNotebook.Tab", background=[("selected", "#1b4a75")])
-                self.configure(background=MAVI_ARKA)
-            except tk.TclError:
-                pass
-            arka, on = MAVI_ARKA, MAVI_METIN
-            vurgu = MAVI_VURGU
+            self._mavi_tema_uygula()
+            arka = MAVI_PALET["arka"]
+            on = MAVI_PALET["metin"]
+            vurgu = MAVI_PALET["vurgu"]
         # Yalnız düz metin okuyucu (tk.Text) bu seçenekleri alır;
         # HtmlFrame'in böyle seçenekleri yok.
         if hasattr(self, "ayrinti") and not self.html_modu:
@@ -635,15 +685,16 @@ class Postacim(tk.Tk):
         self.option_add("*Menu.disabledForeground", on)
 
     def _tema_degistir(self, tema: str):
-        if sv_ttk is None:
-            messagebox.showinfo("Bilgi", "Tema paketi (sv-ttk) kurulu değil.")
-            return
-        sv_ttk.set_theme("dark" if tema == "mavi" else tema, self)
+        if tema == "mavi":
+            self._mavi_tema_uygula()
+        else:
+            if sv_ttk is None:
+                messagebox.showinfo("Bilgi", "Tema paketi (sv-ttk) kurulu değil.")
+                return
+            sv_ttk.set_theme(tema, self)
         self.tema = tema
         self.ayarlar.ayarla("tema", tema)
         self.ayarlar.kaydet()
-        if hasattr(self, "tema_degisken"):
-            self.tema_degisken.set(tema)
         self._stil_uygula()
         self._menu_renkleri()
         self._menu_kur()  # menü renkleri yeni temaya uysun diye yeniden kur
@@ -656,6 +707,27 @@ class Postacim(tk.Tk):
             self.takvim_stil = {g: dict(varsayilan[g]) for g in varsayilan}
             if hasattr(self, "_gun_hucreleri"):
                 self._takvim_stil_uygula()
+
+    def _mavi_tema_uygula(self):
+        """'mavi' temasını kurar ve etkinleştirir (clam tabanlı tam palet).
+
+        sv_ttk koyu temasının üzerine parça parça renk yamalamak yerine
+        tüm ttk parçaları clam atasından paletle türetilir — siyah/uyumsuz
+        alan kalmaz. Klasik listboxlar (combobox açılır listesi) ve kök
+        pencere option_add/option ile boyanır.
+        """
+        if "mavi" not in self.style.theme_names():
+            self.style.theme_create("mavi", parent="clam",
+                                    settings=MAVI_TEMA_AYARLARI)
+        self.style.theme_use("mavi")
+        self.option_add("*TCombobox*Listbox.background", "#143653")
+        self.option_add("*TCombobox*Listbox.foreground", "#e6eef7")
+        self.option_add("*TCombobox*Listbox.selectBackground", "#2b6cb0")
+        self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+        try:
+            self.configure(background="#0d2137")
+        except tk.TclError:
+            pass
 
     def _ikonlari_yukle(self):
         """Dugme ve klasor ikonlarini yukler (postacim/ikonlar/*.png)."""
@@ -6759,11 +6831,17 @@ class AyarlarPenceresi(tk.Toplevel):
             row=0, column=0, sticky="w", pady=(0, 6)
         )
         self.tema_degisken = tk.StringVar(value=self.ana.tema)
-        for i, (deger, etiket) in enumerate(
-                (("light", "Açık"), ("dark", "Koyu"), ("mavi", "Mavi"))):
-            ttk.Radiobutton(
-                sayfa, text=etiket, value=deger, variable=self.tema_degisken
-            ).grid(row=0, column=1 + i, sticky="w", padx=(0, 12))
+        # Radyo düğmeler yerine dropdown: her zaman geçerli tema görünür
+        tema_etiketler = {"light": "Açık", "dark": "Koyu", "mavi": "Mavi"}
+        self.tema_combo = ttk.Combobox(
+            sayfa, textvariable=self.tema_degisken, state="readonly",
+            values=list(tema_etiketler.values()), width=16,
+        )
+        self.tema_combo.grid(row=0, column=1, columnspan=3, sticky="w")
+        # etiket → tema değeri eşlemesi (Kaydet'te kullanılır)
+        self._tema_degerler = {v: k for k, v in tema_etiketler.items()}
+        self.tema_degisken.set(
+            tema_etiketler.get(self.ana.tema, "Koyu"))
 
         ttk.Label(
             sayfa, text="Otomatik yenileme:", font=("TkDefaultFont", 10, "bold")
@@ -7105,7 +7183,7 @@ class AyarlarPenceresi(tk.Toplevel):
             ]
 
         # Genel ayarlar
-        yeni_tema = self.tema_degisken.get()
+        yeni_tema = self._tema_degerler.get(self.tema_degisken.get(), "dark")
         if yeni_tema != self.ana.tema:
             self.ana._tema_degistir(yeni_tema)
         for saniye, etiket in self._otomatik_degerler.items():

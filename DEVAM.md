@@ -1812,3 +1812,34 @@ taşıyor).
 - `tests/tema_test.py` radyo taraması derinleştirildi (notebook sayfası
   içi widget'lar da taranır).
 - run_all.sh 17/17.
+
+
+## Mavi tema: clam tabanlı tam palet (0.1.32, 2026-11-24)
+
+**Bildirim:** "mavi tema ui ın dışına çıkıyor" sonrası kalan siyah/uyumsuz
+parçalar (kullanıcı önizlemede gördü: "label, button, panel arka planları
+siyah kalmış, sırıtıyor").
+
+### Kök neden
+- sv_ttk "sun-valley" koyu teması bazı parçalarda görsel öğeler/kendi
+  renkleri kullandığı için parça parça `style.configure` yamaları tam
+  kapsamıyordu; siyah alanlar lacivert arasında sırıtıyordu.
+
+### Düzeltme (`ui.py`)
+- `MAVI_PALET` + `MAVI_TEMA_AYARLARI` modül düzeyinde tanımlandı.
+- `Postacim._mavi_tema_uygula()`: "mavi" adlı **clam tabanlı tam ttk
+  teması** oluşturulur (tüm parçalar: TFrame, TLabel, TButton, TEntry,
+  TCombobox, TSpinbox, TNotebook(.Tab), Treeview(+Heading), TPanedwindow,
+  TScrollbar, TProgressbar, TCheckbutton, TRadiobutton, TLabelframe(.Label))
+  ve `theme_use("mavi")` ile etkinleşir; combobox açılır listeleri ve
+  kök pencere de boyanır.
+- `_stil_uygula` mavi dalı yalnız `_mavi_tema_uygula()` çağırıp
+  arka/on/vurgu değerlerini paletten alır; `_tema_degistir` ve açılış
+  akışı buna göre sadeleşti (mavi'de sv_ttk atlanır).
+- `_pusula` yardımcısı panel + ayrıntı penceresinde ortak.
+
+### Testler (hepsi geçti)
+- `tests/tema_test.py`: Treeview zemini #143653, kök #0d2137, seçim
+  vurgusu #2b6cb0, light↔mavi geçişler, tercih kaydı, Ayarlar'da
+  "Mavi" gösterimi.
+- `run_all.sh`: 17 test — hepsi geçti.

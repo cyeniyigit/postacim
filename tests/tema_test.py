@@ -127,25 +127,47 @@ def main() -> int:
         kontrol(uygulama.style.lookup("Treeview", "background") == "#143653",
                 "mavi temaya geri dönüş çalışıyor")
 
-        # --- Ayarlar penceresinde 'Mavi' seçeneği ---
+        # --- Ayarlar penceresinde dropdown her zaman geçerli temayı gösterir ---
         ayarlar = ui_mod.AyarlarPenceresi(uygulama)
-        kontrol(ayarlar.tema_degisken.get() == "mavi",
-                f"ayarlar mevcut temayı gösterir "
+        kontrol(ayarlar.tema_degisken.get() == "Mavi",
+                f"dropdown mevcut temayı gösterir "
                 f"({ayarlar.tema_degisken.get()!r})")
-        degerler = []
-
-        def tara(w):
-            for c in w.winfo_children():
-                if c.winfo_class() == "TRadiobutton":
-                    degerler.append(c.cget("value"))
-                tara(c)
-
-        tara(ayarlar)
-        kontrol("mavi" in degerler, f"'Mavi' seçeneği var ({degerler})")
+        kontrol(ayarlar.tema_combo.cget("values") == ("Açık", "Koyu", "Mavi")
+                and ayarlar.tema_combo.winfo_class() == "TCombobox",
+                f"tema seçimi dropdown'da ({ayarlar.tema_combo.cget('values')})")
+        kontrol(not any(r.winfo_class() == "TRadiobutton"
+                        for r in [ayarlar.tema_combo]),
+                "tema seçimi artık radyo düğmesi değil")
         ayarlar.destroy()
     finally:
         uygulama.destroy()
-        ui_mod.Ayarlar, ui_mod.Postacim._istemci_kur = eski_ayarlar, eski_kur
+
+    # --- Varsayılan tema: tercih yoksa "Koyu" (dark) olmalı ---
+    dizin2 = tempfile.mkdtemp(prefix="tema_test_default_")
+    yol2 = os.path.join(dizin2, "hesap.json")
+    with open(yol2, "w", encoding="utf-8") as f:
+        json.dump({
+            "hesaplar": [
+                {"id": "kurum001", "ad": "Kurum", "tur": "ews",
+                 "sunucu": "mail.ornek.gov.tr", "kullanici": "KURUM\\kisi",
+                 "parola": "sifre", "yontem": "ntlm", "son_klasor": "inbox"},
+            ],
+            "aktif": "kurum001", "otomatik_yenile": 0,
+        }, f, ensure_ascii=False, indent=2)
+    ui_mod.Ayarlar = lambda: Ayarlar(yol2)
+    uygulama = ui_mod.Postacim()
+    try:
+        kontrol(uygulama.tema == "dark",
+                f"tercih yokken varsayılan tema Koyu ({uygulama.tema!r})")
+        ayarlar = ui_mod.AyarlarPenceresi(uygulama)
+        kontrol(ayarlar.tema_degisken.get() == "Koyu",
+                f"dropdown varsayılan 'Koyu' gösterir "
+                f"({ayarlar.tema_degisken.get()!r})")
+        ayarlar.destroy()
+    finally:
+        uygulama.destroy()
+
+    ui_mod.Ayarlar, ui_mod.Postacim._istemci_kur = eski_ayarlar, eski_kur
 
     if HATALAR:
         print(f"\n!! {len(HATALAR)} hata:")
