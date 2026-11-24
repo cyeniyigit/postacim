@@ -316,6 +316,20 @@ class Karsilama(tk.Toplevel):
         ).pack(side="left", padx=4)
         self.after(50, self._ortala)  # düğmeler pencereyi uzatır; yeniden ortala
 
+    def hata(self, metin: str, devam: bool = False):
+        """Hata metni gösterir; `devam` ise açılışa devam düğmesi ekler."""
+        self.durum(metin)
+        if not devam:
+            self.after(50, self._ortala)
+            return
+        for widget in self.dugme_cubugu.winfo_children():
+            widget.destroy()
+        ttk.Button(
+            self.dugme_cubugu, text="Devam Et",
+            command=self.ana._acilisi_surdur,
+        ).pack(side="left", padx=4)
+        self.after(50, self._ortala)
+
     def kapat(self):
         try:
             if self.winfo_exists():
@@ -426,31 +440,26 @@ class Postacim(tk.Tk):
         # indirilirken ekranın ortasında ilerlemeyi gösterir.
         self._guncelleme_sureci = False     # denetim/indirme/kurulum sürüyor mu
         self._guncelleme_kurulu: str | None = None  # kurulan yeni sürüm (varsa)
+        self._acilis_bekliyor = True        # ana pencere güncelleme kararı bekliyor
         self.karsilama = Karsilama(self)
         self.karsilama.durum("Postacım başlatılıyor…")
+        # Güncelleme denetimi sürerken ana pencere AÇILMAZ: yalnız karşılama
+        # penceresi görünür; güncelleme yoksa uygulama açılır, güncelleme
+        # kurulursa uygulama otomatik yeniden başlatılır — kullanıcı hiçbir
+        # zaman ayrıca "yeniden başlat" demek zorunda kalmaz.
+        self.withdraw()
         self.update_idletasks()
 
         self._arayuz_kur()
         self._kuyruk_yokla()
         self.after(120, self._kuyruk_yokla)
         self.protocol("WM_DELETE_WINDOW", self._kapat)
-        # Hesap yoksa önce hesap ekleme; varsa kayıtlı kimlikle doğrudan
-        # bağlan, yoksa giriş penceresini aç.
-        if not self.ayarlar.hesaplar():
-            self.after(300, self._hesap_ekle_penceresi)
-        elif aktif.get("kullanici") and aktif.get("parola"):
-            self.after(400, self.yenile)
-        else:
-            self.after(300, self._ilk_baglanti)
-        # Diğer hesapların klasörleri de ağaçta görünsün (Evolution gibi)
-        self.after(1500, self._diger_hesaplari_yukle)
-        # Yeni mail bildirimi (otomatik yenilemeden bağımsız)
-        self.after(2500, self._bildirim_baslat)
         # Karşılama penceresi güncelleme yoksa 8 saniyede kapanır
         self.after(8000, self._karsilama_zamani_doldu)
-        # GitHub sürüm denetimi (izin varsa arka planda indir-kur)
+        # GitHub sürüm denetimi; karar çıkınca açılış sürer (_acilisi_surdur)
         self.after(600, self._guncelleme_baslat)
-        self._otomatik_baslat()
+        # Denetim sonucu kuyruğa hiç gelmezse açılışı kilitlenmekten korur
+        self.after(20000, self._acilis_koruma)
 
     def _baslik_metni(self, hesap: dict) -> str:
         ad = (hesap or {}).get("ad") or (hesap or {}).get("kullanici")
@@ -2737,8 +2746,12 @@ class Postacim(tk.Tk):
             self._guncelleme_sureci = False
             self.durum.set(f"Güncelleme başarısız: {veri[1]}")
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
-                self.karsilama.durum(f"Güncelleme başarısız: {veri[1]}")
-                self.karsilama.after(6000, self.karsilama.kapat)
+                self.karsilama.hata(
+                    f"Güncelleme başarısız: {veri[1]}",
+                    devam=self._acilis_bekliyor,
+                )
+            elif self._acilis_bekliyor:
+                self._acilisi_surdur()  # karşılama yoksa uygulama açılsın
         elif tur == "basarili":
             self.durum.set(veri[1])
         elif tur == "yenile":
@@ -2763,7 +2776,8 @@ class Postacim(tk.Tk):
 
     def _karsilama_kapat(self):
         """Karşılama penceresini kapatır; güncelleme sürerken bekler."""
-        if self._guncelleme_sureci or self._guncelleme_kurulu:
+        if self._acilis_bekliyor or self._guncelleme_sureci or \
+                self._guncelleme_kurulu:
             return
         if getattr(self, "karsilama", None):
             self.karsilama.kapat()
@@ -2772,10 +2786,49 @@ class Postacim(tk.Tk):
         """Açılışta 8 saniye içinde hazır olunmadıysa karşılama yine kapansın."""
         self._karsilama_kapat()
 
+    def _acilisi_surdur(self):
+        """Güncelleme kararı bitti: ana pencereyi gösterip açılışı sürdürür.
+
+        Güncelleme yoksa / denetlenemediyse / kurulamadıysa çağrılır;
+        güncelleme kurulduysa çağrılmaz (uygulama otomatik yeniden başlar).
+        """
+        if not self._acilis_bekliyor:
+            return
+        self._acilis_bekliyor = False
+        self._guncelleme_sureci = False
+        try:
+            self.deiconify()
+        except tk.TclError:
+            pass
+        # Hesap yoksa önce hesap ekleme; varsa kayıtlı kimlikle doğrudan
+        # bağlan, yoksa giriş penceresini aç.
+        aktif = self.ayarlar.aktif_hesap() or {}
+        if not self.ayarlar.hesaplar():
+            self.after(300, self._hesap_ekle_penceresi)
+        elif aktif.get("kullanici") and aktif.get("parola"):
+            self.after(400, self.yenile)
+        else:
+            self.after(300, self._ilk_baglanti)
+        # Diğer hesapların klasörleri de ağaçta görünsün (Evolution gibi)
+        self.after(1500, self._diger_hesaplari_yukle)
+        # Yeni mail bildirimi (otomatik yenilemeden bağımsız)
+        self.after(2500, self._bildirim_baslat)
+        self._otomatik_baslat()
+        # Karşılama, klasör listesi gelmezse de birkaç saniyede kapansın
+        self.after(4000, self._karsilama_kapat)
+
+    def _acilis_koruma(self):
+        """Güncelleme sonucu kuyruğa hiç ulaşmadıysa açılışı kurtarır."""
+        if self._acilis_bekliyor and not self._guncelleme_sureci:
+            self._acilisi_surdur()
+
     def _guncelleme_baslat(self):
         """Açılışta GitHub sürüm denetimini (izin varsa) arka planda başlatır."""
         if not guncelleme.otomatik_izin(self.ayarlar):
-            return  # geliştirme ortamı / kapalı tercih / POSTACIM_GUNCELLEME=0
+            # Geliştirme ortamı / kapalı tercih / POSTACIM_GUNCELLEME=0:
+            # denetim yok — uygulama hemen açılır.
+            self._acilisi_surdur()
+            return
         self._guncelleme_sureci = True
         if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
             self.karsilama.durum("Güncelleme denetleniyor…")
@@ -2845,9 +2898,21 @@ class Postacim(tk.Tk):
         """Denetim/kurulum sonucu: kuruldu ekranı ya da sessiz kapanış."""
         self._guncelleme_sureci = False
         if not surum:
+            if self._acilis_bekliyor:
+                self._acilisi_surdur()  # güncelleme yok — uygulama açılsın
             self._karsilama_kapat()
             return
         self._guncelleme_kurulu = surum
+        if self._acilis_bekliyor:
+            # Açılışta güncelleme kuruldu: ana pencere hiç açılmadan
+            # uygulama yeni sürümle **otomatik** yeniden başlatılır.
+            metin = (f"Güncelleme kuruldu (sürüm {surum}) — "
+                     "uygulama yeniden başlatılıyor…")
+            self.durum.set(metin)
+            if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
+                self.karsilama.durum(metin, 100)
+            self.after(2000, self._guncelleme_yeniden_baslat)
+            return
         metin = (f"Güncelleme kuruldu (sürüm {surum}) — "
                  "yeniden başlatınca etkinleşir")
         self.durum.set(metin)

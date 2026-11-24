@@ -496,6 +496,9 @@ def _arayuz_denetimi(html_mod: bool):
     uygulama = None
     try:
         uygulama = Postacim()
+        # Açılış güncelleme kararı beklemeden ana pencereyi aç (600 ms'lik
+        # karşılama denetimini atla) — çubuk haritalanma denetimi için.
+        uygulama._acilisi_surdur()
 
         def bekle(saniye):
             bitis = time.time() + saniye

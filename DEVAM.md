@@ -1450,3 +1450,46 @@ düşüyordu.
   `__version__ = "0.1.18"` işlemesi + **v0.1.18** etiketiyle Release
   yayınlanmalı (tag ile `__version__` eşleşmeli — `kur()` doğruluyor).
   Kurulu uygulama (0.1.17) açılışta bu sürümü indirip kurar.
+
+
+## Açılışta güncelleme: ana pencere güncelleme bitince açılır (2026-11-24)
+
+**Talep:** "açılışta öncelikle güncelleme esnasında program direkt
+açılmasın. güncelleme penceresi öncelikle gelsin güncelleme tamamen
+bittikten sonra program tamamen açılsın böylece kullanıcı yeniden
+başlatmak zorunda kalmasın."
+
+### Değişiklikler (`ui.py`)
+- `Postacim.__init__`: ana pencere `withdraw()` ile gizli başlar; hesap
+  bağlantı planlaması (`_hesap_ekle_penceresi` / `yenile` /
+  `_ilk_baglanti` / `_diger_hesaplari_yukle` / `_bildirim_baslat` /
+  `_otomatik_baslat`) yeni `_acilisi_surdur()`'a taşındı.
+- `_acilis_bekliyor` bayrağı: güncelleme kararı bekleniyor.
+- `_acilisi_surdur()`: kapıyı açar (deiconify + açılış planlaması +
+  4 sn sonra karşılama yedeği); beklenmiyorsa işlem yapmaz (idempotent).
+- `_acilis_koruma()` (20 sn): denetim sonucu kuyruğa hiç gelmezse
+  açılışı kilitlenmekten kurtarır.
+- `_guncelleme_baslat`: denetim izni yoksa (geliştirme/tercih/env)
+  doğrudan `_acilisi_surdur()` — uygulama hemen açılır.
+- `_guncelleme_bitti_isle`:
+  - boş sürüm (güncelleme yok) → `_acilisi_surdur()` + karşılama kapanır;
+  - **açılışta kurulum bitti** → "uygulama yeniden başlatılıyor…"
+    (%100) ve 2 sn sonra **otomatik** `_guncelleme_yeniden_baslat`
+    (kullanıcıya soru sorulmaz, düğme çıkmaz);
+  - elle denetimde eski davranış korundu (düğmeler / askyesno).
+- `_sonuc_isle` `guncelleme_hata`: açılış bekleniyorsa karşılama
+  penceresinde **"Devam Et"** düğmesi (`Karsilama.hata(metin, devam)`)
+  — güncelleme kurulamadıysa da kullanıcı uygulamayı açabilir; 20 sn
+  koruma zamanlayıcısı da yedekler.
+- `_karsilama_kapat` koruması `_acilis_bekliyor`'u da kapsar (8 sn'lik
+  zamanlayıcı "Devam Et" düğmesini silemez).
+
+### Testler (hepsi geçti)
+- `tests/karsilama_test.py`: açılışta pencere gizli (`withdrawn`),
+  güncelleme yokken uygulama açılır (`normal`), açılış kurulumunda
+  otomatik yeniden başlatma (sahte `yeniden_baslat` kaydı), hata
+  sonrası "Devam Et" ile açılışın sürmesi.
+- `tests/resim_test.py`: uygulama oluşturunca `_acilisi_surdur()` ile
+  güncelleme beklemesi atlanır (yoksa çubuk haritalanma denetimi 600 ms'
+  lik karar penceresine takılıyor).
+- `run_all.sh`: 15 test — hepsi geçti.

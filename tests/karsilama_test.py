@@ -133,6 +133,9 @@ def main() -> int:
                     f"sürüm etiketi ({beklenen})")
             geo = k.geometry()
             kontrol("+" in geo, f"ekran ortası konumu ({geo})")
+            kontrol(uygulama.state() == "withdrawn",
+                    f"güncelleme kararı verilene dek ana pencere gizli "
+                    f"({uygulama.state()})")
 
             # --- çift monitör: doğru monitöre ortalama ---
             ornek = ("DP-1 connected primary 1920x1080+0+0 (normal) 527mm x 296mm\n"
@@ -166,6 +169,8 @@ def main() -> int:
         kontrol(getattr(uygulama, "karsilama", None) is None or
                 not uygulama.karsilama.winfo_exists(),
                 "uygulama hazır olunca karşılama kapandı")
+        kontrol(uygulama.state() == "normal",
+                f"güncelleme yokken uygulama açıldı ({uygulama.state()})")
 
         # --- durum sonucu pencereyi günceller ---
         uygulama.karsilama = ui_mod.Karsilama(uygulama)
@@ -204,6 +209,39 @@ def main() -> int:
                 "hata metni pencerede")
         uygulama.karsilama.kapat()
         uygulama._guncelleme_kurulu = None
+
+        # --- açılışta güncelleme kuruldu → uygulama otomatik yeniden başlar ---
+        baslatilan = []
+        eski_yb = ui_mod.guncelleme.yeniden_baslat
+        ui_mod.guncelleme.yeniden_baslat = lambda: baslatilan.append(1)
+        uygulama._acilis_bekliyor = True
+        uygulama.karsilama = ui_mod.Karsilama(uygulama)
+        uygulama._sonuc_isle(("guncelleme_bitti", "0.1.19"))
+        kontrol(uygulama._guncelleme_kurulu == "0.1.19",
+                "açılış kurulumunda sürüm kaydedildi")
+        kontrol("yeniden başlatılıyor" in
+                uygulama.karsilama.durum_etiket.cget("text"),
+                "açılışta otomatik yeniden başlatma bildirilir")
+        kontrol(uygulama._acilis_bekliyor, "ana pencere açılışta hâlâ gizli")
+        bekle(uygulama, 3)
+        kontrol(baslatilan == [1],
+                f"kurulumdan sonra uygulama otomatik başlatıldı ({baslatilan})")
+        ui_mod.guncelleme.yeniden_baslat = eski_yb
+        uygulama.karsilama.kapat()
+
+        # --- açılışta güncelleme hatası → Devam Et ile uygulama açılır ---
+        uygulama._acilis_bekliyor = True
+        uygulama.karsilama = ui_mod.Karsilama(uygulama)
+        uygulama._sonuc_isle(("guncelleme_hata", "ağ kesildi"))
+        dugmeler = [c.cget("text") for c in
+                    uygulama.karsilama.dugme_cubugu.winfo_children()]
+        kontrol("Devam Et" in dugmeler,
+                f"hata sonrası Devam Et düğmesi ({dugmeler})")
+        for c in uygulama.karsilama.dugme_cubugu.winfo_children():
+            if c.cget("text") == "Devam Et":
+                c.invoke()
+        kontrol(not uygulama._acilis_bekliyor, "Devam Et ile açılış sürdürüldü")
+        uygulama.karsilama.kapat()
 
         # --- elle denetim akışı (sahte modül) ---
         eski_g = ui_mod.guncelleme

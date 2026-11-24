@@ -5,6 +5,15 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
 ## [0.1.18] — 2026-11-24
 
+### Değiştirilen
+- **Açılışta güncelleme varken ana pencere artık açılmaz:** uygulama
+  açılışta önce güncelleme kararını verir; yeni sürüm bulunursa yalnız
+  güncelleme penceresi görünür (indirme + kurulum %'si), kurulum bitince
+  uygulama **otomatik olarak yeni sürümle yeniden başlar** — kullanıcı
+  "Yeniden Başlat" demek zorunda kalmaz. Güncelleme yoksa (ya da
+  denetlenemezse/kurulamazsa) uygulama her zamanki gibi açılır; kurulama
+  hatasında karşılama penceresinde "Devam Et" düğmesi sunulur.
+
 ### Düzeltilen
 - **Karşılama penceresi çift monitörde ortalanıyor:** pencere artık tüm
   ekranın (iki monitörün birleşiminin) değil, **uygulamanın çalıştığı
