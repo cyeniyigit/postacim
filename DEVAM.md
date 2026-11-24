@@ -1493,3 +1493,51 @@ başlatmak zorunda kalmasın."
   güncelleme beklemesi atlanır (yoksa çubuk haritalanma denetimi 600 ms'
   lik karar penceresine takılıyor).
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## "Orijinali göster" gövde alanında orijinal hal (2026-11-24)
+
+**Talep:** "orjinalini göster de ben kodu göstermesini istemedim. benim
+istediğim mail in body kısmının programda gösterildiği yerde orijinal
+halinin gösterilmesiydi." — önceki uygulama ayrı pencerede ham MIME kodu
+açiyordu; doğrusu gövde alanının orijinal (işlenmemiş) HTML'e geçmesi.
+
+### Değişiklikler (`ui.py`)
+- `orijinal_goster()` düğmesi **geçiş (toggle)** oldu:
+  - orijinal modda değilken: `mesaj.govde_html` arka planda hazırlanıp
+    **aynı gövde alanına** yüklenir; düğme "İşlenmiş hali göster" olur.
+  - orijinal moddayken: sunucuya gitmeden işlenmiş gösterime döner
+    (`_govde_yeniden_ciz` — `_detay_goster`'dan ayıklanan gövde çizimi).
+- `_orijinal_html(mesaj)`: orijinal HTML üretimi —
+  - `mesaj.resimler` (cid) + HTML'deki http/https src'ler arka planda
+    `resim_verisi(self.istemci, …)` ile indirilip `_resim_data_uri` ile
+    gömülür (kurum NTLM resimleri de çalışır); çözülemeyen resim olduğu
+    gibi kalır,
+  - `script` + yönlendiren `meta` atılır; `html_taglari_kapat` +
+    `html_tablolar_onar` korunur (Tkhtml3 çökmesin),
+  - `_GOSTERIM_STILI` artık ews'ten içe aktarılıyor.
+- `_orijinal_goster_uygula`: kuyruk sonucu — mesaj değişmediyse /
+  mod hâlâ açıksa `ayrinti.load_html`.
+- `orijinal_hata` sonucu → `_govde_orijinal_resetle`: düğme + mod
+  sıfırlanır, durum çubuğunda "Orijinal gösterilemedi: …".
+- Korumalar: mesaj seçili değilken uyarı; `html_modu` yoksa (tkinterweb
+  kurulu değil) ve mesaj düz metinse (`govde_html` boş) tıklama
+  bilgilendirir; mesaj değişince (`_detay_goster`) mod + düğme yazısı
+  sıfırlanır.
+- Eski `_orijinal_cek` / `_orijinal_pencere` (ham MIME penceresi)
+  kaldırıldı; .eml indirme (`Farklı Kaydet`, `mesaj_mime`) aynen durur.
+- `ews.py`'den içe aktarımlara `html_taglari_kapat`, `html_tablolar_onar`,
+  `_GOSTERIM_STILI` eklendi.
+
+### Testler (hepsi geçti)
+- `tests/orijinal_goster_test.py` baştan yazıldı: işlenmiş gösterimde yer
+  tutucu görünür; orijinalde yer tutucu kalkar, içerik aynı alanda
+  görünür, script sızmaz, cid resmi gömülür (`image_names`), düğme
+  yazıları değişir; işlenmiş hal geri yüklenir; düz metin mesajda
+  bilgilendirme; `_orijinal_html` hata fırlatınca düğme sıfırlanıp durum
+  bildirilir; mesaj yokken uyarı. Testte `messagebox` yamalanır
+  (başsız ortamda modal dialog bloklamasın).
+- Not: `Resim` veri sınıfı yalnız `ad/kaynak/yer_tutucu` alır — testte
+  `content_id=` geçmek AttributeError + modal showerror + takılma
+  üretti (faulthandler ile bulundu).
+- `run_all.sh`: 15 test — hepsi geçti.

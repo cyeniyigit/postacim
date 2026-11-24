@@ -41,6 +41,7 @@ from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
     KLASORLER,
     RESIM_SEMASI,
+    _GOSTERIM_STILI,
     EwsHata,
     EwsIstemci,
     EwsYetkiHatasi,
@@ -49,6 +50,8 @@ from .ews import (
     data_uri_verisi,
     govde_html_gosterim,
     html_metni,
+    html_taglari_kapat,
+    html_tablolar_onar,
     iso_yerel,
     resim_verisi,
 )
@@ -430,6 +433,8 @@ class Postacim(tk.Tk):
         # Tk geri çağrı hataları varsayılan olarak yalnız terminale yazılır;
         # menüden açılan uygulamada iz kalmaz → kayda al ve göster.
         self.report_callback_exception = self._tk_hata_yakala
+        self._govde_orijinal = False   # gövde orijinal (işlenmemiş) halde mi
+        self._orijinal_gomuler: dict = {}  # resim adresi → data: URI (önbellek)
 
         # Tema widget'lar kurulmadan uygulanmali
         if sv_ttk is not None:
@@ -2735,8 +2740,10 @@ class Postacim(tk.Tk):
             self._ek_kaydet(veri[1], veri[2])
         elif tur == "ek_toplu":
             self._ekleri_indir_goster(veri[1], veri[2], veri[3])
-        elif tur == "orijinal":
-            self._orijinal_pencere(veri[1], veri[2])
+        elif tur == "orijinal_html":
+            self._orijinal_goster_uygula(veri[1], veri[2])
+        elif tur == "orijinal_hata":
+            self._govde_orijinal_resetle(veri[2])
         elif tur == "guncelleme_durum":
             self.durum.set(veri[1])
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
@@ -3756,15 +3763,10 @@ class Postacim(tk.Tk):
     def _detay_goster(self, mesaj: Mesaj):
         self.secili = mesaj
         self.baslik.configure(text=f"{mesaj.gonderen_ad or mesaj.gonderen} — {mesaj.konu}")
-        if self.html_modu:
-            self._resim_yer_tutucularini_kur(mesaj)
-            self._html_yukle()
-        else:
-            self.ayrinti.configure(state="normal")
-            self.ayrinti.delete("1.0", "end")
-            self.ayrinti.insert("1.0", mesaj.govde or mesaj.onizleme or "(gövde yok)")
-            self._resim_yer_tutucularini_kur(mesaj)
-            self.ayrinti.configure(state="disabled")
+        self._govde_orijinal = False
+        if getattr(self, "orijinal_dugme", None):
+            self.orijinal_dugme.configure(text="Orijinali göster")
+        self._govde_yeniden_ciz()
         self.ek_listesi.delete(*self.ek_listesi.get_children())
         for i, ek in enumerate(mesaj.ekler):
             self.ek_listesi.insert(
@@ -3780,6 +3782,19 @@ class Postacim(tk.Tk):
             ).start()
 
     # ------------------------------------------------- gövdedeki satır içi resimler
+
+    def _govde_yeniden_ciz(self):
+        """Gövdeyi işlenmiş (normal) gösterimle yeniden çizer (sunucuya gitmeden)."""
+        mesaj = self.secili
+        if self.html_modu:
+            self._resim_yer_tutucularini_kur(mesaj)
+            self._html_yukle()
+        else:
+            self.ayrinti.configure(state="normal")
+            self.ayrinti.delete("1.0", "end")
+            self.ayrinti.insert("1.0", mesaj.govde or mesaj.onizleme or "(gövde yok)")
+            self._resim_yer_tutucularini_kur(mesaj)
+            self.ayrinti.configure(state="disabled")
 
     def _resim_yer_tutucularini_kur(self, mesaj: Mesaj):
         """[resim: ad] yer tutucularını tıklanabilir kayıtlara bağlar.
@@ -4598,51 +4613,98 @@ class Postacim(tk.Tk):
         return ("basarili", f"Kaydedildi: {hedef} ({len(veri)} bayt)")
 
     def orijinal_goster(self):
-        """Mesajın orijinal (ham MIME / .eml) içeriğini pencerede gösterir."""
+        """Gövde alanında mail'in **orijinal (işlenmemiş) halini** gösterir.
+
+        Programın hazırladığı gösterim (resim yer tutucuları, engellenen
+        dış resimler, sadeleştirme) yerine mail gönderildiği haliyle aynı
+        alanda çizilir: satır içi (cid) ve uzak (http/https) resimler arka
+        planda indirilip gövdeye gömülür. Tekrar tıklanınca işlenmiş
+        gösterime dönülür.
+        """
         if not self.secili:
             self.durum.set("Önce bir mesaj seçin")
             return
+        if self._govde_orijinal:
+            self._govde_orijinal = False
+            self.orijinal_dugme.configure(text="Orijinali göster")
+            self._govde_yeniden_ciz()
+            self.durum.set("İşlenmiş gösterime dönüldü")
+            return
         mesaj = self.secili
-        self.durum.set("Orijinal içerik alınıyor…")
+        if not self.html_modu:
+            self.durum.set("Orijinal görünüm için HTML okuyucu (tkinterweb) gerekli")
+            return
+        if not (mesaj.govde_html or "").strip():
+            self.durum.set("Bu mesaj düz metin — orijinali zaten gösteriliyor")
+            return
+        self._govde_orijinal = True
+        self.orijinal_dugme.configure(text="İşlenmiş hali göster")
+        self.durum.set("Orijinal gövde hazırlanıyor (resimler çözülüyor)…")
+        self._orijinal_gomuler = {}
         threading.Thread(
-            target=self._arka_plan, args=(self._orijinal_cek, mesaj), daemon=True
+            target=self._arka_plan, args=(self._orijinal_hazirla, mesaj), daemon=True
         ).start()
 
-    def _orijinal_cek(self, mesaj):
-        return ("orijinal", mesaj, self.istemci.mesaj_mime(mesaj.item_id))
+    def _govde_orijinal_resetle(self, neden: str):
+        """Orijinal gösterim kurulamadı: işlenmiş görünüme dön, haber ver."""
+        self._govde_orijinal = False
+        if getattr(self, "orijinal_dugme", None):
+            self.orijinal_dugme.configure(text="Orijinali göster")
+        self.durum.set(f"Orijinal gösterilemedi: {neden}")
 
-    def _orijinal_pencere(self, mesaj, veri: bytes):
-        """Ham MIME kaynağını (Kaynağı Görüntüle tarzı) pencerede gösterir."""
-        arka, on = self._tema_renkleri()
-        pencere = tk.Toplevel(self)
-        pencere.title(f"Orijinal — {mesaj.konu or '(konu yok)'}")
-        pencere.transient(self)
-        self._pencere_simgesi(pencere)
-        pencere.geometry("820x620")
-        cerçeve = ttk.Frame(pencere)
-        cerçeve.pack(fill="both", expand=True)
-        metin = tk.Text(
-            cerçeve, wrap="none", padx=10, pady=8, relief="flat",
-            bg=arka, fg=on, insertbackground=on,
-            font=("TkFixedFont", 9),
-        )
-        kaydirma_y = ttk.Scrollbar(cerçeve, orient="vertical", command=metin.yview)
-        kaydirma_x = ttk.Scrollbar(pencere, orient="horizontal", command=metin.xview)
-        metin.configure(yscrollcommand=kaydirma_y.set, xscrollcommand=kaydirma_x.set)
-        kaydirma_y.pack(side="right", fill="y")
-        metin.pack(side="left", fill="both", expand=True)
-        kaydirma_x.pack(fill="x")
-        kaynak = veri.decode("utf-8", errors="replace")
-        SINIR = 2_000_000
-        if len(kaynak) > SINIR:
-            kaynak = kaynak[:SINIR] + (
-                f"\n\n… (mesaj büyük; ilk {SINIR} karakter gösterildi — "
-                "tamamı için sağ tuş → Farklı Kaydet (.eml)"
-            )
-        metin.insert("1.0", kaynak)
-        metin.configure(state="disabled")
-        ttk.Button(pencere, text="Kapat", command=pencere.destroy).pack(pady=6)
-        pencere.bind("<Escape>", lambda e: pencere.destroy())
+    def _orijinal_hazirla(self, mesaj):
+        """Orijinal HTML'i arka planda hazırlar (resim indirme burada)."""
+        try:
+            html = self._orijinal_html(mesaj)
+        except EwsHata as exc:
+            return ("orijinal_hata", mesaj, str(exc))
+        except Exception as exc:
+            return ("orijinal_hata", mesaj, f"Beklenmeyen hata: {exc}")
+        return ("orijinal_html", mesaj, html)
+
+    def _orijinal_html(self, mesaj: Mesaj) -> str:
+        """Mail'in gönderildiği hali andıran HTML'i üretir.
+
+        - Satır içi (cid) ve uzak (http/https) resimler indirilip `data:`
+          URI olarak gövdeye gömülür; indirilemeyen resim olduğu gibi kalır.
+        - `script` ile yönlendiren `meta` atılır (Tkhtml zaten çalıştırmaz;
+          metne karışmasın), kapanmamış etiket / iç içe tablo onarımı
+          korunur (Tkhtml3 çökmesin).
+        """
+        govde = (mesaj.govde_html or "").strip()
+
+        def gom(adres: str) -> None:
+            if not adres or adres in self._orijinal_gomuler:
+                return
+            try:
+                veri = resim_verisi(self.istemci, mesaj, Resim(kaynak=adres))
+            except Exception:
+                return  # çözülemeyen resim orijinalde olduğu gibi kalır
+            if veri:
+                self._orijinal_gomuler[adres] = self._resim_data_uri(veri)
+
+        for resim in mesaj.resimler or []:
+            gom(resim.kaynak)
+        for adres in re.findall(
+            r'(?is)<img\b[^>]*\bsrc\s*=\s*["\'](https?://[^"\']+)["\']', govde
+        ):
+            gom(adres)
+        for adres, uri in self._orijinal_gomuler.items():
+            govde = govde.replace(f'"{adres}"', f'"{uri}"')
+            govde = govde.replace(f"'{adres}'", f"'{uri}'")
+        govde = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", " ", govde)
+        govde = re.sub(r"(?is)<script\b[^>]*/>", " ", govde)
+        govde = re.sub(r"(?is)<meta\b[^>]*http-equiv[^>]*>", " ", govde)
+        govde = html_taglari_kapat(govde)
+        govde = html_tablolar_onar(govde)
+        return _GOSTERIM_STILI + govde
+
+    def _orijinal_goster_uygula(self, mesaj, html: str):
+        """Hazırlanan orijinal HTML'i gövde alanında gösterir (hâlâ seçiliyse)."""
+        if self.secili is not mesaj or not self._govde_orijinal:
+            return  # kullanıcı başka mesaja geçti / işlenmiş görünüme döndü
+        self.ayrinti.load_html(html)
+        self.durum.set("Orijinal gösterim — işlenmiş hal için düğmeye tıklayın")
 
     def bilgiler(self):
         """Mesaj özellik penceresi (Outlook 'Özellikler')."""

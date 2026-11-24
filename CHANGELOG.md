@@ -5,6 +5,18 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
 ## [0.1.20] — 2026-11-24
 
+### Değiştirilen
+- **"Orijinali göster" artık gövdeyi olduğu gibi gösterir:** düğme
+  ayrı bir pencerede ham MIME kodu yerine, mail'in **gönderildiği
+  orijinal halini aynı gövde alanında** gösterir — resim yer tutucuları
+  ve sadeleştirmeler kalkar; satır içi (cid) ve uzak (http/https)
+  resimler arka planda indirilip gövdeye gömülür. Düğme "İşlenmiş hali
+  göster"e dönüşür; tekrar tıklanınca normal gösterime dönülür (sunucuya
+  tekrar gidilmez). `script` ve yönlendiren `meta` etiketleri yine de
+  atılır; kapanmamış etiket/tablo onarımı korunur (görüntüleyici
+  çökmesin). Düz metin mesajlarda ve HTML okuyucu (tkinterweb) yokken
+  düğme bilgilendirir.
+
 ### Eklenen
 - Sürüm numarası artık ana pencerenin başlık çubuğunda da görünür
   ("Postacım 0.1.20 — Hesap Adı") — güncelleme sonrası yeni sürümün

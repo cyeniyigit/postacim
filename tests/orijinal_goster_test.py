@@ -3,15 +3,20 @@
 
 Kapsar:
 - Gövde araç çubuğunda "Orijinali göster" düğmesi var
-- Düğme tıklanınca ham MIME arka planda çekilir, "Orijinal —" penceresi açılır
-- Pencere metni ham MIME kaynağını gösterir
-- Büyük mesaj sınırlanır (2 MB) ve not eklenir
+- Tıklayınca gövde alanı **orijinal (işlenmemiş) HTML** ile çizilir:
+  resim yer tutucuları kalkar, cid resmi gövdeye gömülür,
+  düğme "İşlenmiş hali göster" olur
+- Tekrar tıklanınca işlenmiş gösterime dönülür (sunucuya gitmeden)
+- Düz metin mesajda ayrım yapılmaz (durum bilgilendirir)
+- Hazırlama hatasında düğme sıfırlanır, durum çubuğu bildirir
 - Mesaj seçili değilken tıklama hata vermez, durum çubuğu bilgilendirir
 
 Kullanim:  xvfb-run -a .venv/bin/python tests/orijinal_goster_test.py
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import sys
@@ -21,7 +26,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from postacim.config import Ayarlar  # noqa: E402
-from postacim.ews import Klasor, Mesaj  # noqa: E402
+from postacim.ews import Klasor, Mesaj, Resim  # noqa: E402
 import postacim.ui as ui_mod  # noqa: E402
 
 HATALAR = []
@@ -35,16 +40,34 @@ def kontrol(kosul, mesaj):
         print(f"  !! {mesaj}")
 
 
+def png_baytlari() -> bytes:
+    from PIL import Image
+
+    tampon = io.BytesIO()
+    Image.new("RGB", (4, 4), (255, 0, 0)).save(tampon, "PNG")
+    return tampon.getvalue()
+
+
+CID_MIME = (
+    b"From: a@b\r\nTo: c@d\r\nSubject: t\r\nMIME-Version: 1.0\r\n"
+    b'Content-Type: multipart/related; boundary="XX"\r\n\r\n'
+    b'--XX\r\nContent-Type: text/html; charset="utf-8"\r\n\r\n'
+    b'<p>orijinal-mime</p><img src="cid:ii_1">\r\n'
+    b'--XX\r\nContent-Type: image/png\r\nContent-ID: <ii_1>\r\n'
+    b'Content-Disposition: inline; filename="grafik.png"\r\n\r\n'
+    + png_baytlari()
+    + b"\r\n--XX--\r\n"
+)
+
+
 class SahteIstemci:
     def __init__(self, hesap: dict):
         self.hesap = hesap
-        self.mime_istekleri: list = []
 
     def klasor_listesi(self):
         return [
-            Klasor(kimlik="inbox", ad="Gelen Kutusu", toplam=2, okunmamis=1),
+            Klasor(kimlik="inbox", ad="Gelen Kutusu", toplam=2, okunmamis=0),
             Klasor(kimlik="sentitems", ad="Gönderilmiş", toplam=0, okunmamis=0),
-            Klasor(kimlik="drafts", ad="Taslaklar", toplam=0, okunmamis=0),
         ]
 
     def mesajlar(self, klasor="inbox", sayfa_boyutu=50, offset=0, arama="",
@@ -54,9 +77,9 @@ class SahteIstemci:
                   gonderen="gonderen@ornek.gov.tr",
                   gonderen_ad="Gönderen Kişi", tarih="24.11.2026 10:00",
                   okundu=True, klasor=klasor, tariham="2026-11-24T10:00:00"),
-            Mesaj(item_id="m2", konu="ikinci mesaj",
+            Mesaj(item_id="m2", konu="düz mesaj",
                   gonderen="ikinci@ornek.gov.tr", tarih="23.11.2026 09:00",
-                  okundu=False, klasor=klasor, tariham="2026-11-23T09:00:00"),
+                  okundu=True, klasor=klasor, tariham="2026-11-23T09:00:00"),
         ]
         return ms[offset:offset + sayfa_boyutu], len(ms)
 
@@ -67,7 +90,16 @@ class SahteIstemci:
         return []
 
     def mesaj_detay(self, mesaj):
-        mesaj.govde = "Gövde (sahte)"
+        if mesaj.item_id == "m1":
+            mesaj.govde = "Gövde (sahte)"
+            mesaj.govde_html = (
+                "<html><body><p>ORIJINAL_GOVDE_ICERIK</p>"
+                '<img src="cid:ii_1"><script>kotu()</script></body></html>'
+            )
+            mesaj.resimler = [Resim(ad="grafik.png", kaynak="cid:ii_1")]
+        else:
+            mesaj.govde = "Düz metin gövde"
+            mesaj.govde_html = ""
         return mesaj
 
     def okundu_isaretle(self, mesaj, okundu=True):
@@ -77,10 +109,7 @@ class SahteIstemci:
         pass
 
     def mesaj_mime(self, mesaj_id):
-        self.mime_istekleri.append(mesaj_id)
-        return (b"From: gonderen@ornek.gov.tr\r\n"
-                b"Subject: =?utf-8?q?deneme_mesaj=C4=B1?=\r\n"
-                b"\r\n g\xc3\xb6vde\r\n")
+        return CID_MIME
 
 
 def bekle(uygulama, saniye):
@@ -88,14 +117,6 @@ def bekle(uygulama, saniye):
     while time.time() < bitis:
         uygulama.update()
         time.sleep(0.05)
-
-
-def orijinal_penceresi(uygulama):
-    for pencere in uygulama.winfo_children():
-        if isinstance(pencere, ui_mod.tk.Toplevel) and \
-                pencere.title().startswith("Orijinal"):
-            return pencere
-    return None
 
 
 def main() -> int:
@@ -116,6 +137,10 @@ def main() -> int:
     ui_mod.Ayarlar = lambda: Ayarlar(yol)
     ui_mod.Postacim._istemci_kur = lambda self, hesap: SahteIstemci(hesap)
 
+    import tkinter.messagebox as messagebox
+    messagebox.showerror = lambda *a, **k: HATALAR.append(f"showerror {a}")
+    messagebox.showinfo = lambda *a, **k: HATALAR.append(f"showinfo {a}")
+
     uygulama = ui_mod.Postacim()
     try:
         bekle(uygulama, 3)
@@ -131,63 +156,70 @@ def main() -> int:
         uygulama.orijinal_goster()
         kontrol("Önce bir mesaj seçin" in uygulama.durum.get(),
                 f"mesaj yokken durum uyarısı ({uygulama.durum.get()!r})")
-        kontrol(orijinal_penceresi(uygulama) is None,
-                "mesaj yokken pencere açılmaz")
 
-        # --- Mesaj seç → orijinal göster ---
+        # --- HTML mesaj seç → işlenmiş gösterimde yer tutucu görünür ---
         uygulama.klasor_listesi.selection_set("kurum001|inbox")
         uygulama.liste.selection_set(uygulama.liste.get_children()[0])
         uygulama.liste.event_generate("<<TreeviewSelect>>")
         bekle(uygulama, 3)
-        kontrol(uygulama.secili is not None, "mesaj seçildi")
+        kontrol(uygulama.secili is not None and
+                uygulama.secili.item_id == "m1", "HTML mesaj seçildi")
+        kontrol("[resim: grafik.png]" in uygulama.ayrinti.get_page_text(),
+                "işlenmiş gösterimde resim yer tutucusu var")
 
-        istemci = uygulama.istemci
+        # --- Orijinal göster: gövde alanı orijinal HTML ile çizilir ---
         uygulama.orijinal_goster()
-        kontrol("Orijinal içerik alınıyor" in uygulama.durum.get() or
-                "deneme" in uygulama.durum.get(),
-                f"tıklamada durum 'alınıyor' ({uygulama.durum.get()!r})")
+        kontrol(uygulama.orijinal_dugme.cget("text") == "İşlenmiş hali göster",
+                "düğme 'İşlenmiş hali göster' oldu")
+        bekle(uygulama, 4)
+        sayfa = uygulama.ayrinti.get_page_text()
+        kontrol("[resim:" not in sayfa,
+                "orijinal gösterimde yer tutucu kalkar")
+        kontrol("ORIJINAL_GOVDE_ICERIK" in sayfa,
+                "orijinal gövde içeriği aynı alanda görünür")
+        kontrol("kotu()" not in sayfa, "script metni gösterime sızmaz")
+        gomulu = [a for a in uygulama.ayrinti.image_names()
+                  if a.startswith("_tkinterweb") or a.startswith("govde_resim")]
+        kontrol(len(gomulu) >= 1,
+                f"cid resmi gövdeye gömüldü ({len(gomulu)} gömülü resim)")
+        kontrol("Orijinal gösterim" in uygulama.durum.get(),
+                f"durum çubuğu orijinal modu bildirir ({uygulama.durum.get()!r})")
+
+        # --- Tekrar tıkla → işlenmiş gösterime dönüş (sunucuya gitmeden) ---
+        uygulama.orijinal_goster()
+        kontrol(uygulama.orijinal_dugme.cget("text") == "Orijinali göster",
+                "düğme eski yazısına döndü")
+        bekle(uygulama, 2)
+        kontrol("[resim: grafik.png]" in uygulama.ayrinti.get_page_text(),
+                "işlenmiş gösterime geri dönüldü")
+
+        # --- Düz metin mesaj: orijinal ayrımı yapılmaz ---
+        uygulama.liste.selection_set(uygulama.liste.get_children()[1])
+        uygulama.liste.event_generate("<<TreeviewSelect>>")
+        bekle(uygulama, 2)
+        uygulama.orijinal_goster()
+        kontrol("düz metin" in uygulama.durum.get(),
+                f"düz metin mesajda durum bilgilendirir ({uygulama.durum.get()!r})")
+        kontrol(not uygulama._govde_orijinal, "düz metin mesajda mod değişmez")
+
+        # --- Hazırlama hatası: düğme sıfırlanır, durum bildirir ---
+        uygulama.liste.selection_set(uygulama.liste.get_children()[0])
+        uygulama.liste.event_generate("<<TreeviewSelect>>")
+        bekle(uygulama, 2)
+        eski_html = uygulama._orijinal_html
+
+        def bozuk(_mesaj):
+            raise ValueError("deneme hatası")
+
+        uygulama._orijinal_html = bozuk
+        uygulama.orijinal_goster()
         bekle(uygulama, 3)
-
-        kontrol(istemci.mime_istekleri == ["m1"],
-                f"mesaj_mime istemciden çağrıldı ({istemci.mime_istekleri})")
-        pencere = orijinal_penceresi(uygulama)
-        kontrol(pencere is not None, "'Orijinal —' penceresi açıldı")
-        if pencere:
-            kontrol("deneme mesajı" in pencere.title(),
-                    f"pencere başlığında konu ({pencere.title()!r})")
-            metin = None
-            for cocuk in pencere.winfo_children():
-                for torun in cocuk.winfo_children():
-                    if torun.winfo_class() == "Text":
-                        metin = torun
-            kontrol(metin is not None, "pencerede metin alanı var")
-            if metin:
-                icerik = metin.get("1.0", "end")
-                kontrol("From: gonderen@ornek.gov.tr" in icerik,
-                        "ham MIME başlıkları görünür")
-                kontrol("gövde" in icerik, "ham MIME gövdesi görünür")
-            pencere.destroy()
-
-        # --- Büyük mesaj: sınırlanır, not eklenir ---
-        buyuk = (b"X-Cizgi: 0123456789abcdef\r\n" * 200_000)  # ~5.2 MB
-        uygulama._orijinal_pencere(uygulama.secili, buyuk)
-        pencere = orijinal_penceresi(uygulama)
-        kontrol(pencere is not None, "büyük mesajda pencere açıldı")
-        if pencere:
-            metin = None
-            for cocuk in pencere.winfo_children():
-                for torun in cocuk.winfo_children():
-                    if torun.winfo_class() == "Text":
-                        metin = torun
-            if metin:
-                icerik = metin.get("1.0", "end")
-                kontrol(len(icerik) < 2_100_000,
-                        f"içerik sınırlı ({len(icerik)} karakter)")
-                kontrol("ilk 2000000 karakter gösterildi" in icerik,
-                        "büyük mesajda açıklama notu var")
-            pencere.destroy()
-
-        hata = list(getattr(uygulama, "_orijinal_test_hata", []) or [])
+        uygulama._orijinal_html = eski_html
+        kontrol(uygulama.orijinal_dugme.cget("text") == "Orijinali göster",
+                "hatada düğme eski yazısına döndü")
+        kontrol("Orijinal gösterilemedi" in uygulama.durum.get(),
+                f"hatada durum çubuğu bildirir ({uygulama.durum.get()!r})")
+        kontrol(not uygulama._govde_orijinal, "hatada orijinal mod kapanır")
     finally:
         uygulama.destroy()
         ui_mod.Ayarlar, ui_mod.Postacim._istemci_kur = eski_ayarlar, eski_kur
