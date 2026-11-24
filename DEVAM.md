@@ -1681,3 +1681,54 @@ kaldıralım" (kapsam netleştirildi: yalnız düğme).
   "on_link_click")` ile iç parçacıktan okunur; toplu gösterim
   `tum_resimleri_goster()` ile çağrılır; sayaç "gizli" bildirmez denetimi.
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## Hava durumu göstergesi (MGM) + üst çubuk sadeleştirme (2026-11-24)
+
+**Talep:** "meteoroloji.gov.tr den istediğimiz her hangi bir yerin hava
+durumunu çekerek programın uygun bir alanında gösterilmesini istiyorum.
+hatta üzerinde tıkladığımızda daha ayrıntılı bilgileri ayrı bir ui
+açarak göstermeli" — netleştirmede: Gönder/Al, Yenile, Hesaptan Çıkış
+düğmeleri kalkacak; Yeni e-posta Temizle'nin yanına alınacak; boşluğa
+hava durumu; varsayılan İstanbul; konum Ayarlar'dan değiştirilebilir.
+
+### Servis doğrulaması (tahmin yok — canlı test)
+- MGM sayfasının Angular servisi (`ililceler.js`) okundu; gerçek uç
+  noktalar `servis.mgm.gov.tr/web/...`: merkezler/iller, merkezler/
+  ililcesi?il=, merkezler?il=&ilce= (ilce boşsa öncelikli merkez),
+  sondurumlar?merkezid=, tahminler/gunluk?istno= — curl ile canlı
+  doğrulandı (Ankara Keçiören: 6.1°C, PB…).
+
+### Yeni modül `postacim/meteoroloji.py`
+- `iller`, `ililcesi(il)`, `merkez(il, ilce)`, `sondurum(merkezid)`,
+  `gunluk_tahmin(istno)`; `MeteorolojiHatasi`; `_il_temizle`
+  (İstanbul→istanbul, I→ı); `TARAYICI_BASLIK` tarzı başlıklar (UA +
+  Origin/Referer); `HADISELER` kod eşlemesi (A☀️, AB🌤️, PB⛅, CB☁️,
+  Y🌧️, K🌨️, TS⛈️, S🌫️…) + `hadise_goster` bilinmeyen kod yedeği.
+
+### Değişiklikler (`ui.py`)
+- `_ust_cubuk_kur`: Gönder/Al, Yenile, Hesaptan Çıkış düğmeleri
+  kaldırıldı (işlevler menü/kısayol: F5, Ctrl+Q); Yeni e-posta
+  Temizle'nin yanına; sağda `hava_gosterge` düğmesi.
+- `_hava_yenile` (30 dk zamanlayıcı) + `_hava_cek` (arka plan:
+  merkez→sondurum→tahmin) → kuyruk ("hava", …) / ("hava_hata", …).
+- `_hava_uygula`: gösterge "⛅ Bakırköy 6.1°C"; `_hava_pencere`: anlık
+  durum + 5 günlük tahmin (gün adları Pzt…, en yüksek/düşük, rüzgâr),
+  kaynak bilgisi; -9999 yok-değerleri filtrelenir; Rüzgâr yönü pusulaya
+  çevrilir; "Yenile"/"Kapat" düğmeleri; Esc.
+- Ayarlar penceresi ▸ Genel: "Hava durumu konumu" — il combobox
+  (readonly, MGM'den) + ilçe combobox; listeler arka planda kuyrukla
+  ("hava_iller"/"hava_ilceler") yüklenir; `_kaydet` tercihi
+  `hava_konum` olarak yazar ve `_hava_yenile` tetikler.
+- `_ayarlar_penceresi` artık `self.ayarlar_penceresi` referansı tutar
+  (kuyruk sonuçları pencere açıkken combobox'ları doldurur).
+- Varsayılan: {"il": "İstanbul", "ilce": ""} → öncelikli merkez.
+
+### Testler (hepsi geçti)
+- `tests/hava_test.py` (yeni, çevrimdışı; run_all.sh'a eklendi): sahte
+  `requests.get` ile uç noktalar/çözümleme, hadise eşlemesi + yedek,
+  hata yolları; üst çubukta gösterge var / kaldırılan düğmeler yok;
+  kuyruk sonucu etiketi günceller; ayrıntı penceresi içeriği; hata
+  sonrası nötr gösterge. Not: sahte istekçi `params=` değişkenini
+  denetlemeli (URL'de sorgu taşınmıyor).
+- `run_all.sh`: 16 test — hepsi geçti.

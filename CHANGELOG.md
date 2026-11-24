@@ -3,6 +3,25 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.27] — 2026-11-24
+
+### Eklenen
+- **Hava durumu göstergesi (MGM):** üst araç çubuğunda seçilen konumun
+  anlık hava durumu görünür — fenomen simgesi + sıcaklık (örn.
+  "⛅ Bakırköy 6.1°C", 30 dakikada bir yenilenir). Göstergelere
+  tıklayınca ayrıntı penceresi açılır: anlık durum (hissedilen, nem,
+  rüzgâr, basınç) ve **5 günlük tahmin**. Kaynak: Meteoroloji Genel
+  Müdürlüğü (servis.mgm.gov.tr).
+- **Konum seçimi:** Ayarlar ▸ Genel bölümünde il/ilçe seçicileri
+  (il listesi MGM'den doldurulur); tercih `hesap.json`'a kaydedilir.
+  Varsayılan: İstanbul (ilin öncelikli merkezi).
+
+### Değiştirilen
+- Üst araç çubuğu sadeleştirildi: **Gönder/Al**, **Yenile** ve
+  **Hesaptan Çıkış** düğmeleri kaldırıldı (işlevler menülerde ve
+  kısayollarda sürer: F5, Ctrl+Q); **Yeni e-posta** düğmesi Temizle'nin
+  yanına alındı. Boşalan alana hava durumu göstergesi yerleşti.
+
 ## [0.1.26] — 2026-11-24
 
 ### Düzeltilen

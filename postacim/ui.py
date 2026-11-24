@@ -36,6 +36,7 @@ except ImportError:
 from .config import Ayarlar, KisiDefteri
 from . import dosya_secici
 from . import guncelleme
+from . import meteoroloji
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
 from .ews import (
@@ -436,6 +437,7 @@ class Postacim(tk.Tk):
         self.report_callback_exception = self._tk_hata_yakala
         self._govde_orijinal = False   # gövde orijinal (işlenmemiş) halde mi
         self._orijinal_gomuler: dict = {}  # resim adresi → data: URI (önbellek)
+        self._hava_veri = None         # (il, ilce, merkez, sondurum, tahmin)
 
         # Tema widget'lar kurulmadan uygulanmali
         if sv_ttk is not None:
@@ -778,21 +780,16 @@ class Postacim(tk.Tk):
             command=self._aramayi_temizle,
         ).pack(side="left", padx=4)
         ttk.Button(
-            cubuk, text="Hesaptan Çıkış", image=self.ikon["cikis"], compound="left",
-            command=self.hesaptan_cikis,
-        ).pack(side="right", padx=(12, 0))
-        ttk.Button(
             cubuk, text="Yeni e-posta", image=self.ikon["yeni"], compound="left",
             command=self.yeni_posta,
-        ).pack(side="right")
-        ttk.Button(
-            cubuk, text="Yenile", image=self.ikon["yenile"], compound="left",
-            command=self.yenile,
-        ).pack(side="right", padx=6)
-        ttk.Button(
-            cubuk, text="Gönder/Al", image=self.ikon["gonder_al"], compound="left",
-            command=self.gonder_al,
-        ).pack(side="right")
+        ).pack(side="left", padx=(4, 0))
+        # Hava durumu göstergesi (Gönder/Al, Yenile, Hesaptan Çıkış
+        # düğmelerinin yerine): tıklayınca ayrıntı penceresi açılır.
+        # Yenile: F5 / menü; Hesaptan Çıkış: menü + Ctrl+Q.
+        self.hava_gosterge = ttk.Button(
+            cubuk, text="Hava durumu —", command=self._hava_pencere,
+        )
+        self.hava_gosterge.pack(side="right", padx=(12, 0))
 
     def _gövde_kur(self):
         # Posta | Takvim sekmeleri (Evolution gibi tek pencere)
@@ -2338,7 +2335,7 @@ class Postacim(tk.Tk):
 
     def _ayarlar_penceresi(self):
         """Genel + Takvim ayarları penceresini açar."""
-        AyarlarPenceresi(self)
+        self.ayarlar_penceresi = AyarlarPenceresi(self)
 
     def _takvim_sonuc(self, randevular: list):
         self.randevular = list(randevular)
@@ -2745,6 +2742,19 @@ class Postacim(tk.Tk):
             self._orijinal_goster_uygula(veri[1], veri[2])
         elif tur == "orijinal_hata":
             self._govde_orijinal_resetle(veri[2])
+        elif tur == "hava":
+            self._hava_uygula(veri[1], veri[2], veri[3], veri[4], veri[5])
+        elif tur == "hava_hata":
+            # Sessiz: hava durumu açılışı engellememeli; yalnız etiket nötr kalır
+            self.durum.set(f"Hava durumu alınamadı: {veri[2]}")
+        elif tur == "hava_iller":
+            if getattr(self, "ayarlar_penceresi", None) and \
+                    self.ayarlar_penceresi.winfo_exists():
+                self.ayarlar_penceresi.hava_iller_doldur(veri[1])
+        elif tur == "hava_ilceler":
+            if getattr(self, "ayarlar_penceresi", None) and \
+                    self.ayarlar_penceresi.winfo_exists():
+                self.ayarlar_penceresi.hava_ilceler_doldur(veri[2])
         elif tur == "guncelleme_durum":
             self.durum.set(veri[1])
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
@@ -2823,6 +2833,8 @@ class Postacim(tk.Tk):
         # Yeni mail bildirimi (otomatik yenilemeden bağımsız)
         self.after(2500, self._bildirim_baslat)
         self._otomatik_baslat()
+        # Hava durumu göstergesi (MGM): açılışta bir kez, sonra 30 dk'da bir
+        self.after(1500, self._hava_yenile)
         # Karşılama, klasör listesi gelmezse de birkaç saniyede kapansın
         self.after(4000, self._karsilama_kapat)
 
@@ -2941,6 +2953,154 @@ class Postacim(tk.Tk):
         except Exception:
             pass
         guncelleme.yeniden_baslat()
+
+    # ------------------------------------------------------------------ hava durumu
+
+    def _hava_yenile(self):
+        """MGM'den hava durumunu arka planda çeker; 30 dakikada bir yeniler."""
+        threading.Thread(
+            target=self._arka_plan, args=(self._hava_cek,), daemon=True
+        ).start()
+        try:
+            self.after(30 * 60 * 1000, self._hava_yenile)
+        except tk.TclError:
+            pass
+
+    def _hava_cek(self):
+        """Ayarlanan konumun anlık durumu ve 5 günlük tahminini çeker."""
+        konum = self.ayarlar.al("hava_konum", {}) or {}
+        il = konum.get("il") or "İstanbul"
+        ilce = konum.get("ilce") or ""
+        try:
+            merkez = meteoroloji.merkez(il, ilce)
+            sond = meteoroloji.sondurum(merkez["merkezId"])
+            try:
+                tah = meteoroloji.gunluk_tahmin(
+                    merkez.get("gunlukTahminIstNo") or merkez["merkezId"])
+            except Exception:
+                tah = None  # tahmin gelmezse yalnız anlık durum gösterilir
+            return ("hava", il, ilce, merkez, sond, tah)
+        except Exception as exc:
+            return ("hava_hata", None, f"{type(exc).__name__}: {exc}")
+
+    def _hava_uygula(self, il, ilce, merkez, sond, tah):
+        """Çekilen veriyi üst çubuk göstergesine yazar ve önbelleğe alır."""
+        simge, _ad = meteoroloji.hadise_goster(sond.get("hadiseKodu"))
+        yer = ilce or merkez.get("ilce") or il
+        sicaklik = sond.get("sicaklik")
+        if isinstance(sicaklik, (int, float)) and sicaklik > -100:
+            metin = f"{simge} {yer} {sicaklik:g}°C"
+        else:
+            metin = f"{simge} {yer} {meteoroloji.hadise_goster(sond.get('hadiseKodu'))[1]}"
+        self._hava_veri = {"il": il, "ilce": ilce, "merkez": merkez,
+                           "sondurum": sond, "tahmin": tah}
+        try:
+            if getattr(self, "hava_gosterge", None) and \
+                    self.hava_gosterge.winfo_exists():
+                self.hava_gosterge.configure(text=metin)
+        except tk.TclError:
+            pass
+
+    def _hava_pencere(self):
+        """Hava durumu ayrıntı penceresi (anlık + 5 günlük tahmin)."""
+        arka, on = self._tema_renkleri()
+        pencere = tk.Toplevel(self)
+        pencere.title("Hava durumu")
+        pencere.geometry("430x580")
+        pencere.transient(self)
+        self._pencere_simgesi(pencere)
+        pencere.configure(bg=arka)
+        metin = tk.Text(
+            pencere, wrap="word", padx=14, pady=10, relief="flat",
+            bg=arka, fg=on, insertbackground=on, font=(YAZI_TIPİ, 11),
+            state="disabled", cursor="arrow",
+        )
+        kaydirma = ttk.Scrollbar(pencere, orient="vertical", command=metin.yview)
+        metin.configure(yscrollcommand=kaydirma.set)
+        kaydirma.pack(side="right", fill="y")
+        metin.pack(side="left", fill="both", expand=True)
+        metin.tag_configure("baslik", font=(YAZI_TIPİ, 13, "bold"))
+        metin.tag_configure("buyuk", font=(YAZI_TIPİ, 24, "bold"))
+        metin.tag_configure("soluk", foreground="#777777")
+        metin.tag_configure("gun", font=(YAZI_TIPİ, 10, "bold"))
+
+        veri = self._hava_veri
+        if not veri:
+            metin.configure(state="normal")
+            metin.insert("1.0", "Hava durumu henüz alınamadı.\n\n"
+                         "Bağlantıyı kontrol edip pencereyi yeniden "
+                         "açabilirsiniz.\nKonum seçimini Ayarlar ▸ Genel "
+                         "bölümünden yapabilirsiniz.")
+            metin.configure(state="disabled")
+            ttk.Button(pencere, text="Kapat", command=pencere.destroy).pack(pady=8)
+            return
+
+        il, ilce, merkez, sond, tah = (veri["il"], veri["ilce"],
+                                       veri["merkez"], veri["sondurum"],
+                                       veri.get("tahmin"))
+        yer = ilce or merkez.get("ilce") or il
+        simge, hadise_ad = meteoroloji.hadise_goster(sond.get("hadiseKodu"))
+        sicaklik = sond.get("sicaklik")
+
+        def ekle(metin_parca, tag="", son="\n"):
+            metin.configure(state="normal")
+            metin.insert("end", metin_parca + son, tag)
+            metin.configure(state="disabled")
+
+        ekle(f"{il} — {yer}", "baslik", "\n\n")
+        ekle(f"{simge} ", "buyuk", "")
+        ekle(f"{hadise_ad}", "baslik", "\n")
+        if isinstance(sicaklik, (int, float)) and sicaklik > -100:
+            ekle(f"{sicaklik:g} °C", "buyuk", "\n\n")
+
+        def bilgi(ad, deger, bicim="{:g}"):
+            if isinstance(deger, (int, float)) and deger > -100:
+                ekle(f"{ad}: ", "gun", "")
+                ekle(bicim.format(deger), "", "\n")
+
+        bilgi("Hissedilen", sond.get("hissedilenSicaklik"), "{:g} °C")
+        bilgi("Nem", sond.get("nem"), "%%{:g}")
+        hiz, yon = sond.get("ruzgarHiz"), sond.get("ruzgarYon")
+        if isinstance(hiz, (int, float)) and hiz > -100:
+            pusula = ""
+            if isinstance(yon, (int, float)) and 0 <= yon <= 360:
+                pusula = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"][
+                    int((yon + 22.5) // 45) % 8] + " "
+            bilgi("Rüzgâr", hiz, f"{{:g}} m/s {pusula}")
+        bilgi("Basınç", sond.get("denizeIndirgenmisBasinc"), "{:g} hPa")
+        v_zaman = (sond.get("veriZamani") or "")[:16].replace("T", " ")
+        if v_zaman:
+            ekle(f"Ölçüm zamanı: {v_zaman} UTC", "soluk", "\n\n")
+
+        if tah and tah.get("tarihGun1"):
+            ekle("— 5 Günlük Tahmin —", "baslik", "\n")
+            gun_adi = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+            for i in range(1, 6):
+                tarih = tah.get(f"tarihGun{i}") or ""
+                try:
+                    gun = datetime.fromisoformat(tarih)
+                    gun_etiket = f"{gun_adi[gun.weekday()]} {gun.strftime('%d.%m')}"
+                except ValueError:
+                    gun_etiket = f"{i}. gün"
+                t_simge, t_ad = meteoroloji.hadise_goster(tah.get(f"hadiseGun{i}"))
+                yuksek, dusuk = tah.get(f"enYuksekGun{i}"), tah.get(f"enDusukGun{i}")
+                ekle(f"{gun_etiket}  {t_simge} {t_ad}", "gun", "\n")
+                if isinstance(yuksek, (int, float)):
+                    ekle(f"   En yüksek {yuksek:g}°C — En düşük {dusuk:g}°C")
+                    ekle("", "", "\n")
+                hiz_g = tah.get(f"ruzgarHizGun{i}")
+                if isinstance(hiz_g, (int, float)):
+                    ekle(f"   Rüzgâr {hiz_g:g} m/s\n", "soluk", "")
+                ekle("", "", "\n")
+        ekle("Kaynak: MGM (meteoroloji.gov.tr) • Konum: Ayarlar ▸ Genel",
+             "soluk", "\n")
+
+        alt = ttk.Frame(pencere)
+        alt.pack(fill="x", pady=(0, 8))
+        ttk.Button(alt, text="Yenile", command=self._hava_yenile).pack(
+            side="left", padx=10)
+        ttk.Button(alt, text="Kapat", command=pencere.destroy).pack(side="left")
+        pencere.bind("<Escape>", lambda e: pencere.destroy())
 
     def _guncelleme_oto_degisti(self):
         """Yardım menüsündeki 'Otomatik güncelleme' işaretini kaydeder."""
@@ -6605,6 +6765,78 @@ class AyarlarPenceresi(tk.Toplevel):
         ).grid(row=7, column=0, sticky="w", pady=(6, 0))
         self._balon_uyarisini_guncelle()
 
+        # --- Hava durumu konumu ---
+        konum = self.ana.ayarlar.al("hava_konum", {}) or {}
+        ttk.Label(
+            sayfa, text="Hava durumu konumu:", font=("TkDefaultFont", 10, "bold")
+        ).grid(row=9, column=0, sticky="w", pady=(18, 6))
+        self.hava_il_degisken = tk.StringVar(
+            value=konum.get("il") or "İstanbul")
+        self.hava_ilce_degisken = tk.StringVar(
+            value=konum.get("ilce") or "")
+        self.hava_il_combo = ttk.Combobox(
+            sayfa, textvariable=self.hava_il_degisken,
+            state="readonly", width=20,
+        )
+        self.hava_il_combo.grid(row=10, column=0, columnspan=2, sticky="w")
+        self.hava_ilce_combo = ttk.Combobox(
+            sayfa, textvariable=self.hava_ilce_degisken, width=20,
+        )
+        self.hava_ilce_combo.grid(row=10, column=2, sticky="w", padx=(6, 0))
+        ttk.Label(
+            sayfa,
+            text="il seçilince ilçe listesi yüklenir (ilçe boş bırakılırsa "
+                 "ilin öncelikli merkezi kullanılır); değişiklik Kaydet "
+                 "ile uygulanır.",
+            foreground="#666666", wraplength=430, justify="left",
+        ).grid(row=11, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.hava_il_combo.bind(
+            "<<ComboboxSelected>>", self._hava_il_secildi)
+        threading.Thread(target=self._hava_iller_yukle, daemon=True).start()
+
+    def _hava_iller_yukle(self):
+        """İl listesini MGM'den arka planda çeker."""
+        try:
+            liste = [m for m in meteoroloji.iller()]
+            oncelikli = [m for m in liste if m.get("oncelik") == 1]
+            iller = [m["il"] for m in sorted(
+                oncelikli or liste, key=lambda m: m.get("ilPlaka", 99))]
+            self.ana.is_kuyrugu.put(("ok", ("hava_iller", iller)))
+        except Exception:
+            pass  # liste yüklenemezse kullanıcı elle yazabilir
+
+    def _hava_il_secildi(self, _olay=None):
+        """Seçilen ilin ilçe listesini arka planda çeker."""
+        il = self.hava_il_degisken.get()
+        threading.Thread(
+            target=self._hava_ilceler_yukle, args=(il,), daemon=True
+        ).start()
+
+    def _hava_ilceler_yukle(self, il):
+        try:
+            liste = meteoroloji.ililcesi(il)
+            ilceler = sorted({m["ilce"] for m in liste if m.get("ilce")})
+            self.ana.is_kuyrugu.put(
+                ("ok", ("hava_ilceler", il, ilceler)))
+        except Exception:
+            pass
+
+    def hava_iller_doldur(self, iller):
+        self.hava_il_combo.configure(values=iller)
+        if self.hava_il_degisken.get() not in iller:
+            # mevcut değer listede yoksa ekle (kullanıcı elle yazmış olabilir)
+            degerler = iller + [self.hava_il_degisken.get()]
+            self.hava_il_combo.configure(values=degerler)
+
+    def hava_ilceler_doldur(self, il, ilceler):
+        if self.hava_il_degisken.get().strip().lower() != il.strip().lower():
+            return  # kullanıcı il değiştirmiş olabilir
+        self.hava_ilce_combo.configure(values=ilceler)
+        if self.hava_ilce_degisken.get() and \
+                self.hava_ilce_degisken.get() not in ilceler:
+            self.hava_ilce_combo.configure(
+                values=[self.hava_ilce_degisken.get()] + ilceler)
+
     def _balon_uyarisini_guncelle(self):
         """Sistem balonlarının kapalı olup olmadığına göre uyarıyı gösterir."""
         try:
@@ -6828,6 +7060,17 @@ class AyarlarPenceresi(tk.Toplevel):
                 self.ana.durum.set("Yeni e-posta uyarıları açıldı.")
             else:
                 self.ana.durum.set("Yeni e-posta uyarıları kapatıldı.")
+
+        # Hava durumu konumu
+        eski_konum = self.ana.ayarlar.al("hava_konum", {}) or {}
+        yeni_konum = {
+            "il": self.hava_il_degisken.get().strip() or "İstanbul",
+            "ilce": self.hava_ilce_degisken.get().strip(),
+        }
+        if yeni_konum != eski_konum:
+            self.ana.ayarlar.ayarla("hava_konum", yeni_konum)
+            self.ana.ayarlar.kaydet()
+            self.ana._hava_yenile()
 
         # Takvim stili
         self.ana.takvim_stil = self.stil
