@@ -4670,6 +4670,7 @@ class Postacim(tk.Tk):
         self.durum.set("Orijinal gövde hazırlanıyor (resimler çözülüyor)…")
         self._orijinal_gomuler = {}
         self._orijinal_basarisiz: list[str] = []
+        self._orijinal_gunluk: list[str] = []
         try:
             self.resim_cubugu.pack_forget()  # resim çubuğu işlenmiş moddandır
         except tk.TclError:
@@ -4709,6 +4710,14 @@ class Postacim(tk.Tk):
         govde = (mesaj.govde_html or "").strip()
         gomuler = self._orijinal_gomuler  # adres (ham + küçük harf) → data uri
 
+        # MIME'yi BİR KEZ çek (çok resimli mesajda sunucu defalarca
+        # sorgulanmasın / kısıtlanmasın); cid adresleri bunda aranır.
+        ham = None
+        try:
+            ham = self.istemci.mesaj_mime(mesaj.item_id)
+        except Exception:
+            ham = None
+
         def gom(adres: str | None) -> None:
             if not adres:
                 return
@@ -4720,10 +4729,13 @@ class Postacim(tk.Tk):
             denemeler = [adres, html_mod.unescape(adres)]
             if adres.lower().startswith("cid:"):
                 denemeler.append("cid:" + adres[4:].lower())
+            son_hata = "boş veri"
             for deneme in denemeler:
                 try:
-                    veri = resim_verisi(self.istemci, mesaj, Resim(kaynak=deneme))
-                except Exception:
+                    veri = resim_verisi(self.istemci, mesaj,
+                                        Resim(kaynak=deneme), ham=ham)
+                except Exception as exc:
+                    son_hata = f"{type(exc).__name__}: {exc}"
                     continue
                 if veri:
                     uri = self._resim_data_uri(veri)
@@ -4731,6 +4743,7 @@ class Postacim(tk.Tk):
                         gomuler[a] = uri
                     return
             self._orijinal_basarisiz.append(adres)
+            self._orijinal_gunluk.append(f"{adres} → {son_hata}")
 
         # 1) Mesajın resim kayıtları + HTML'deki tüm src adresleri
         for resim in mesaj.resimler or []:
@@ -4770,6 +4783,22 @@ class Postacim(tk.Tk):
             "Orijinal gösterim — işlenmiş hal için düğmeye tıklayın"
             + (f" ({eksik} resim yüklenemedi)" if eksik else "")
         )
+        if self._orijinal_gunluk:
+            # Teşhis için çözülemeyen resimleri kayda yaz.
+            try:
+                gunluk_dizin = os.path.join(
+                    os.environ.get("XDG_STATE_HOME", "")
+                    or os.path.join(os.path.expanduser("~"), ".local", "state"),
+                    "postacim",
+                )
+                os.makedirs(gunluk_dizin, exist_ok=True)
+                with open(os.path.join(gunluk_dizin, "orijinal.log"),
+                          "a", encoding="utf-8") as f:
+                    f.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                            f"({mesaj.konu or mesaj.item_id}) =====\n")
+                    f.write("\n".join(self._orijinal_gunluk) + "\n")
+            except OSError:
+                pass
 
     def bilgiler(self):
         """Mesaj özellik penceresi (Outlook 'Özellikler')."""

@@ -3,6 +3,16 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.24] — 2026-11-24
+
+### Değiştirilen
+- Orijinal görünüm hazırlanırken mesajın MIME içeriği artık **bir kez**
+  çekilir — çok resimli mesajlarda (ör. 26 resimli sipariş postası)
+  sunucuya her resim için ayrı istek gitmez (hız + sunucu kısıtlaması
+  riski azalır).
+- Çözülemeyen resimlerin adresleri ve hata nedenleri
+  `~/.local/state/postacim/orijinal.log` dosyasına yazılır (teşhis için).
+
 ## [0.1.23] — 2026-11-24
 
 ### Düzeltilen

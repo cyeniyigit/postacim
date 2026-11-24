@@ -1603,3 +1603,22 @@ Hepsiburada sipariş postası; orijinal mod açık, resimler kırık
   User-Agent'ını kaydeder; `resim_verisi` http isteğinin `Mozilla/5.0`
   kimliği taşıdığı doğrulanır. `SahteOturum.get` `headers` kabul eder.
 - `run_all.sh`: 15 test — hepsi geçti.
+
+
+## Orijinal görünüm: teşhis + MIME bir kez (2026-11-24)
+
+**Bildirim:** "yok hala aynı" — 0.1.22/0.1.23 sonrası kırık resim
+devam ediyor (kullanıcı 0.1.23'ü kurup test etmiş; hata.log'da yeni
+istisna yok → hatalar sessiz yutuluyor).
+
+### Düzeltmeler (`ui.py`, `ews.py`)
+- `resim_verisi(..., ham=None)`: önceden çekilmiş MIME kabul eder;
+  `ham` verilirse `istemci.mesaj_mime` tekrar çağrılmaz.
+- `_orijinal_html`: MIME **bir kez** çekilir (26 resimli posta → 26
+  EWS MimeContent çağrısı yerine 1; kısıtlama/hız sorunu giderilir).
+- Çözülemeyen her resim "adres → hata" olarak `_orijinal_gunluk`'a
+  toplanır ve `_orijinal_goster_uygula`
+  `~/.local/state/postacim/orijinal.log`'a yazdırır — kullanıcı bir
+  kez deneyip bizim doğrudan okuyabileceğimiz gerçek teşhis verisi
+  üretir. Durum çubuğunda "(N resim yüklenemedi)" sayısı sürer.
+- Testler: 15/15 geçti.

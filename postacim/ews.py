@@ -1832,11 +1832,14 @@ def _mime_resim_bul(ham: bytes, hedef: str) -> bytes | None:
     return None
 
 
-def resim_verisi(istemci, mesaj: Mesaj, resim: Resim) -> bytes:
+def resim_verisi(istemci, mesaj: Mesaj, resim: Resim,
+                 ham: bytes | None = None) -> bytes:
     """Gövdedeki bir yer tutucunun resim baytlarını getirir.
 
     Sırasıyla denenir: `data:` gömülü, `http(s)` indirme, mesajın MIME
     içeriğinde Content-Id/dosya adı arama, ek listesinden `ek_indir`.
+    `ham` verilmişse (önceden çekilmiş MIME) tekrar çekilmez — çok
+    resimli mesajlarda sunucuya aynı MIME için defalarca gidilmez.
     """
     kaynak = (resim.kaynak or "").strip()
     if not kaynak:
@@ -1864,10 +1867,11 @@ def resim_verisi(istemci, mesaj: Mesaj, resim: Resim) -> bytes:
 
     hedef = kaynak[4:] if kaynak.lower().startswith("cid:") else kaynak
     hedef = hedef.strip().strip("<>")
-    try:
-        ham = istemci.mesaj_mime(mesaj.item_id)
-    except EwsHata:
-        ham = None
+    if ham is None:
+        try:
+            ham = istemci.mesaj_mime(mesaj.item_id)
+        except EwsHata:
+            ham = None
     if ham:
         veri = _mime_resim_bul(ham, hedef)
         if veri:
