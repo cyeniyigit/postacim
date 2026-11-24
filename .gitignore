@@ -16,3 +16,7 @@ venv/
 *.local.json
 hesap.json
 kisiler.json
+
+# Yerel çalışma notları (GitHub'a yüklenmez)
+kurallar.md
+istekler.md
