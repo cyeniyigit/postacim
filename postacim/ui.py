@@ -2634,7 +2634,10 @@ class Postacim(tk.Tk):
     def _kimlik_penceresi(self, hesap: dict, hata: str | None) -> bool:
         imap_mi = hesap.get("tur") == "imap"
         oauth2_mi = imap_mi and hesap.get("yontem") == "oauth2"
+        # Pencere zemini temaya uysun (koyu temalarda gri kalmaması için)
+        arka, on = self._tema_renkleri()
         pencere = tk.Toplevel(self)
+        pencere.configure(bg=arka)
         pencere.title(
             f"Postacım — {hesap.get('ad') or 'Bağlantı bilgileri'}"
         )
@@ -2675,13 +2678,16 @@ class Postacim(tk.Tk):
 
         if oauth2_mi:
             # OAuth2: parola alanları yok — yeniden yetkilendirme düğmesi
-            durum = ttk.Label(pencere, text="", foreground="#5f6368")
-            ttk.Button(
+            durum = ttk.Label(pencere, text="")
+            yetkilendir_dugme = ttk.Button(
                 pencere, text="Google ile yetkilendir…",
                 command=lambda: self._oauth_yeniden_yetkilendir(
                     pencere, hesap, sonuc, durum
                 ),
-            ).grid(row=satir + 1, column=0, columnspan=2, pady=6)
+            )
+            yetkilendir_dugme.grid(row=satir + 1, column=0, columnspan=2,
+                                   pady=6)
+            yetkilendir_dugme.focus_set()  # hedeftaki imleç artefaktı olmasın
             durum.grid(row=satir + 2, column=0, columnspan=2, pady=(0, 10))
             pencere.protocol("WM_DELETE_WINDOW", pencere.destroy)
             pencere.wait_window()

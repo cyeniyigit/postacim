@@ -26,6 +26,15 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   - Not: Google Cloud tarafında CalDAV API etkin olmalı; Personal
     mod istemci tokende 7 günlük süre koymaz.
 
+### Düzeltilen
+- **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
+  denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
+  açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı
+  eklendi (OAuth2'de refresh token kimlik sayılır). Giriş penceresi
+  OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
+- **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
+  kalmıyordu).
+
 ### Testler
 - `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
   istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
