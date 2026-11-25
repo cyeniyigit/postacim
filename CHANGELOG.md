@@ -37,7 +37,7 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   birleşik CA deposu 0600 izinle önbelleklenir. IMAP + SMTP yollarında
   etkin.
 
-### Düzelttilen
+### Düzeltilen
 - **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
   denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
   açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı
@@ -54,7 +54,10 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 - `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
   istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
   yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
-  Bearer + 401 yenileme. run_all.sh 19/19 geçti.
+  Bearer + 401 yenileme.
+- `tests/sertifika_test.py` (yeni, çevrimdışı): PEM/DER çevirisi, AIA
+  çözümleme, birleşik CA yazımı (0600), onarım akışı. run_all.sh
+  **20/20** geçti.
 
 ## [0.1.34] — 2026-11-24
 
