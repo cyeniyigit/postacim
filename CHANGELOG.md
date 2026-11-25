@@ -34,6 +34,10 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
 - **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
   kalmıyordu).
+- **Global tema paleti:** `_stil_uygula` artık `tk_setPalette` ile Tk'nın
+  klasik paletini temaya çevirir — tüm açık pencereler ve bundan sonra
+  açılacak alt pencereler (dialog zeminleri, menüler) seçili temayı
+  izler; pencereye pencere düzeltme gerekmez.
 
 ### Testler
 - `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,

@@ -670,6 +670,21 @@ class Postacim(tk.Tk):
             arka = MAVI_PALET["arka"]
             on = MAVI_PALET["metin"]
             vurgu = MAVI_PALET["vurgu"]
+        # GLOBAL PALET: ttk widget'lar temayı kendi alır; ama klasik Tk
+        # pencere/widget'lar (Toplevel zemini, menüler, dialoglar…) almaz.
+        # tk_setPalette tüm klasik widget'ların varsayılanını temaya çevirir
+        # ve bundan sonra açılacak alt pencereler de temayı izler — böylece
+        # her pencereye tek tek bg uygulamaya gerek kalmaz.
+        try:
+            self.tk_setPalette(
+                background=arka, foreground=on,
+                activeBackground=vurgu, activeForeground="#ffffff",
+                highlightColor=vurgu, highlightBackground=arka,
+                insertBackground=on, selectBackground=vurgu,
+                selectForeground="#ffffff",
+            )
+        except tk.TclError:
+            pass
         # Yalnız düz metin okuyucu (tk.Text) bu seçenekleri alır;
         # HtmlFrame'in böyle seçenekleri yok.
         if hasattr(self, "ayrinti") and not self.html_modu:
@@ -3031,11 +3046,12 @@ class Postacim(tk.Tk):
         except tk.TclError:
             pass
         # Hesap yoksa önce hesap ekleme; varsa kayıtlı kimlikle doğrudan
-        # bağlan, yoksa giriş penceresini aç.
+        # bağlan, yoksa giriş penceresini aç. (OAuth2'de kimlik = token;
+        # parola boştur — _hesap_kimlik_tam ikisini de bilir.)
         aktif = self.ayarlar.aktif_hesap() or {}
         if not self.ayarlar.hesaplar():
             self.after(300, self._hesap_ekle_penceresi)
-        elif aktif.get("kullanici") and aktif.get("parola"):
+        elif _hesap_kimlik_tam(aktif):
             self.after(400, self.yenile)
         else:
             self.after(300, self._ilk_baglanti)
