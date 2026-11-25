@@ -20,6 +20,7 @@ import imaplib
 import re
 import smtplib
 import socket
+import ssl
 import threading
 from datetime import datetime, timezone
 from email import policy as mime_policy
@@ -31,6 +32,7 @@ from typing import Iterable
 import requests
 
 from . import google_oturum
+from . import sertifika
 from .ews import (
     Ek,
     EwsHata,
@@ -173,6 +175,25 @@ class ImapIstemci:
 
     # ------------------------------------------------------------ bağlantı
 
+    def _ssl_ile_baglan(self, host: str, port: int, uret):
+        """`uret(baglam)` ile TLS bağlantısı kurar; zincir eksikse onarır.
+
+        Sunucu (örn. MEB) ara sertifikayı göndermediğinde TLS doğrulaması
+        "certificate verify failed" ile düşer. Bu durumda zincir AIA'dan
+        çözülüp (`sertifika.py`, doğrulama ASLA kapatılmaz) bağlantı bir
+        kez daha denenir. Onarım yapılamazsa okunur hata yükselir.
+        """
+        try:
+            return uret(ssl.create_default_context())
+        except ssl.SSLCertVerificationError as exc:
+            yenilenmis = sertifika.baglan_dene(host, port, host)
+            if yenilenmis is None:
+                raise EwsHata(
+                    f"SSL sertifikası doğrulanamadı (zincir çözülemedi): "
+                    f"{exc} — sunucuda ara sertifika eksik olabilir."
+                ) from exc
+            return uret(yenilenmis)
+
     def _yeni_baglanti(self) -> imaplib.IMAP4:
         """Yeni bir IMAP oturumu açar ve giriş yapar; hazır bağlantı döner."""
         if not self.kullanici:
@@ -183,8 +204,13 @@ class ImapIstemci:
                                          timeout=30)
                 baglanti.starttls()
             else:
-                baglanti = imaplib.IMAP4_SSL(self.gelen_sunucu, self.gelen_port,
-                                             timeout=30)
+                baglanti = self._ssl_ile_baglan(
+                    self.gelen_sunucu, self.gelen_port,
+                    lambda ctx: imaplib.IMAP4_SSL(
+                        self.gelen_sunucu, self.gelen_port,
+                        timeout=30, ssl_context=ctx,
+                    ),
+                )
             if self.yontem == "oauth2":
                 self._xoauth2_giris(baglanti)
             else:
@@ -860,8 +886,13 @@ class ImapIstemci:
     def _smtp_gonder(self, mesaj: EmailMessage) -> None:
         try:
             if self.guvenli == "ssl":
-                sunucu = smtplib.SMTP_SSL(self.giden_sunucu, self.giden_port,
-                                          timeout=30)
+                sunucu = self._ssl_ile_baglan(
+                    self.giden_sunucu, self.giden_port,
+                    lambda ctx: smtplib.SMTP_SSL(
+                        self.giden_sunucu, self.giden_port,
+                        timeout=30, context=ctx,
+                    ),
+                )
             else:
                 sunucu = smtplib.SMTP(self.giden_sunucu, self.giden_port,
                                       timeout=30)

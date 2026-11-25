@@ -26,7 +26,18 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   - Not: Google Cloud tarafında CalDAV API etkin olmalı; Personal
     mod istemci tokende 7 günlük süre koymaz.
 
-### Düzeltilen
+### Eklenen
+- **MEB (meb.gov.tr) e-posta desteği:** Hesap penceresinde "MEB'e
+  ayarla" düğmesi — IMAP `epostagelen.meb.gov.tr:993` + SMTP
+  `epostagiden.meb.gov.tr:465` (SSL); parola yerine MEBBİS → Kişisel
+  Bilgiler → Uygulama Şifreleri'nden üretilen **uygulama kodu** kullanılır.
+- **`postacim/sertifika.py`:** sunucu sertifika zincirini eksik
+  gönderirse (MEB'de ara sertifika yok) AIA'dan (RFC 5280) ara
+  sertifika indirilir ve doğrulama AÇIK kalarak bağlantı kurulur;
+  birleşik CA deposu 0600 izinle önbelleklenir. IMAP + SMTP yollarında
+  etkin.
+
+### Düzelttilen
 - **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
   denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
   açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı

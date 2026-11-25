@@ -5730,9 +5730,13 @@ class HesapPenceresi(tk.Toplevel):
         ttk.Entry(gid, textvariable=self.giden_port_var, width=6).pack(
             side="left", padx=(4, 0)
         )
-        ttk.Button(
+        gmail_dugme = ttk.Button(
             self.imap_cerceve, text="Gmail'e ayarla", command=self._gmail_ayarla
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        )
+        gmail_dugme.grid(row=5, column=0, sticky="w", pady=(6, 0))
+        ttk.Button(
+            self.imap_cerceve, text="MEB'e ayarla", command=self._meb_ayarla,
+        ).grid(row=5, column=1, sticky="w", padx=(0, 0), pady=(6, 0))
         satir += 1
 
         # Yardım metni (türe göre değişir)
@@ -5851,7 +5855,9 @@ class HesapPenceresi(tk.Toplevel):
                         "Gmail: Google Hesabı → Güvenlik → 2 Adımlı Doğrulama\n"
                         "açıkken 16 haneli uygulama parolası oluşturun ve buraya\n"
                         "yazın. Gmail'de IMAP etkinleştirilmiş olmalıdır\n"
-                        "(Ayarlar → Tüm Ayarlar → Yönlendirme ve POP/IMAP)."
+                        "(Ayarlar → Tüm Ayarlar → Yönlendirme ve POP/IMAP).\n"
+                        "MEB: parola yerine MEBBİS → Kişisel Bilgiler →\n"
+                        "Uygulama Şifreleri'nden üretilen uygulama kodu girilir."
                     )
                 )
 
@@ -5863,6 +5869,24 @@ class HesapPenceresi(tk.Toplevel):
         self.gelen_var.set("imap.gmail.com")
         self.gelen_port_var.set("993")
         self.giden_var.set("smtp.gmail.com")
+        self.giden_port_var.set("465")
+        self._tur_goster()
+
+    def _meb_ayarla(self):
+        """MEB kurumsal e-posta için hazır sunucu ayarlarını doldurur.
+
+        meb.gov.tr (merkez/İL/İlçe) sistemi TÜBİTAK BİLGEM'in Milli
+        E-Posta Sistemi'dir: IMAP `epostagelen.meb.gov.tr:993`,
+        SMTP `epostagiden.meb.gov.tr:465` (SSL). Parola yerine MEBBİS
+        → Kişisel Bilgiler → Uygulama Şifreleri'nden üretilen
+        **uygulama kodu** kullanılır.
+        """
+        self.tur_degisken.set("imap")
+        if not self.ad_var.get().strip():
+            self.ad_var.set("MEB")
+        self.gelen_var.set("epostagelen.meb.gov.tr")
+        self.gelen_port_var.set("993")
+        self.giden_var.set("epostagiden.meb.gov.tr")
         self.giden_port_var.set("465")
         self._tur_goster()
 

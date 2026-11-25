@@ -149,7 +149,7 @@ def main() -> int:
     sunucu = MiniImapSunucu()
 
     # Güvenli sarmalayıcı yerine düz TCP (TLS'siz yerel sunucu)
-    def duz_baglan(host, port, timeout=None):
+    def duz_baglan(host, port, timeout=None, ssl_context=None):
         return imaplib.IMAP4(host, port, timeout=timeout)
 
     with mock.patch.object(imap_mod.imaplib, "IMAP4_SSL", duz_baglan):

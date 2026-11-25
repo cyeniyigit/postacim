@@ -587,7 +587,7 @@ def smtp_test():
     gonderilen = {}
 
     class SahteSMTP_SSL:
-        def __init__(self, host, port, timeout=None):
+        def __init__(self, host, port, timeout=None, context=None):
             gonderilen["host"] = host
             gonderilen["port"] = port
 
