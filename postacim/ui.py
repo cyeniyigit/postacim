@@ -20,6 +20,7 @@ import webbrowser
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from tkinter import font as tkfont, messagebox, ttk
+from tkinter import filedialog
 
 import requests
 
@@ -1354,6 +1355,10 @@ class Postacim(tk.Tk):
                 takvim.get("url", ""),
                 takvim.get("kullanici", ""),
                 takvim.get("parola", ""),
+                oauth=takvim.get("oauth"),
+                token_sakla=lambda kayit, t=takvim: self.ayarlar.takvim_guncelle(
+                    t.get("id", ""), {"oauth": kayit}
+                ),
             )
             self._caldav_istemciler[tid] = istemci
         return istemci
@@ -2494,7 +2499,14 @@ class Postacim(tk.Tk):
     def _istemci_kur(self, hesap: dict):
         """Hesap türüne göre istemci üretir (Exchange EWS veya Gmail/IMAP)."""
         if hesap.get("tur") == "imap":
-            return ImapIstemci(hesap)
+            istemci = ImapIstemci(hesap)
+            # OAuth2: yenilenen token'ı hesap kaydına yaz (hesap.json, 0600)
+            if istemci.yontem == "oauth2":
+                istemci.token_sakla = lambda kayit, h=hesap: (
+                    self.ayarlar.hesap_guncelle(h.get("id", ""),
+                                                {"oauth": kayit})
+                )
+            return istemci
         return EwsIstemci(
             sunucu=hesap.get("sunucu", ""),
             kullanici=hesap.get("kullanici", ""),
@@ -5414,6 +5426,41 @@ class HakkindaPenceresi(tk.Toplevel):
                 self.after(50, lambda: self._grab_al(deneme + 1))
 
 
+def _google_istemci_hazirla(parent) -> bool:
+    """Google istemci kimliğini sağlar; yoksa kullanıcıdan JSON seçtirir.
+
+    Google Cloud'dan indirilen client_secret JSON dosyası bir kez seçilir
+    ve `~/.config/postacim/google_istemci.json` altına 0600 izinle
+    kopyalanır (depoya girmez).
+    """
+    from . import google_oturum
+
+    try:
+        google_oturum.istemci_yukle()
+        return True
+    except google_oturum.OturumHatasi:
+        pass
+    messagebox.showinfo(
+        "Google istemci kimliği",
+        "Google Cloud'dan indirilen client_secret JSON dosyasını seçin.\n"
+        "(Bir kez istenir; yerel ayar klasörüne 0600 izinle kopyalanır.)",
+        parent=parent,
+    )
+    kaynak = filedialog.askopenfilename(
+        title="client_secret JSON seç",
+        filetypes=[("JSON", "*.json"), ("Tüm dosyalar", "*.*")],
+        parent=parent,
+    )
+    if not kaynak:
+        return False
+    try:
+        google_oturum.istemci_kaydet(kaynak)
+        return True
+    except google_oturum.OturumHatasi as exc:
+        messagebox.showerror("İstemci kimliği", str(exc), parent=parent)
+        return False
+
+
 class HesapPenceresi(tk.Toplevel):
     """Hesap ekleme/düzenleme penceresi (Kurum EWS veya Gmail/IMAP).
 
@@ -5470,7 +5517,11 @@ class HesapPenceresi(tk.Toplevel):
         self.parola_var = tk.StringVar(
             value=(self.hesap.get("parola", "") if self.hesap else "")
         )
-
+        # IMAP kimlik yöntemi: uygulama parolası | Google (OAuth2)
+        self.kimlik_var = tk.StringVar()
+        self._oauth_kayit = dict(
+            (self.hesap or {}).get("oauth") or {}
+        )  # yetkilendirme sonucu (token)
         satir = 0
         ttk.Label(
             self, text="Hesap türü:", font=(YAZI_TIPİ, 10, "bold")
@@ -5543,26 +5594,45 @@ class HesapPenceresi(tk.Toplevel):
         )
         ttk.Entry(self.imap_cerceve, textvariable=self.eposta_var,
                   width=32).grid(row=0, column=1, padx=6, pady=3, sticky="we")
-        ttk.Label(self.imap_cerceve, text="Uygulama parolası:").grid(
+        ttk.Label(self.imap_cerceve, text="Kimlik:").grid(
             row=1, column=0, sticky="w"
         )
-        ttk.Entry(self.imap_cerceve, textvariable=self.parola_var, show="•",
-                  width=32).grid(row=1, column=1, padx=6, pady=3, sticky="we")
+        ttk.Combobox(
+            self.imap_cerceve, textvariable=self.kimlik_var, state="readonly",
+            values=("Uygulama parolası", "Google (OAuth2)"), width=28,
+        ).grid(row=1, column=1, padx=6, pady=3, sticky="we")
+        self.kimlik_var.trace_add("write", lambda *_: self._kimlik_goster())
+        self.parola_etiket = ttk.Label(self.imap_cerceve,
+                                       text="Uygulama parolası:")
+        self.parola_etiket.grid(row=2, column=0, sticky="w")
+        self.parola_giris = ttk.Entry(self.imap_cerceve,
+                                      textvariable=self.parola_var, show="•",
+                                      width=32)
+        self.parola_giris.grid(row=2, column=1, padx=6, pady=3, sticky="we")
+        # OAuth2: yetkilendirme düğmesi + durum
+        self.oauth_cerceve = ttk.Frame(self.imap_cerceve)
+        self.oauth_cerceve.grid(row=2, column=1, padx=6, pady=3, sticky="we")
+        ttk.Button(
+            self.oauth_cerceve, text="Google ile yetkilendir…",
+            command=self._oauth_yetkilendir,
+        ).pack(side="left")
+        self.oauth_durum = ttk.Label(self.oauth_cerceve, text="")
+        self.oauth_durum.pack(side="left", padx=(8, 0))
         ttk.Label(self.imap_cerceve, text="Gelen sunucu:").grid(
-            row=2, column=0, sticky="w"
-       )
+            row=3, column=0, sticky="w"
+        )
         gel = ttk.Frame(self.imap_cerceve)
-        gel.grid(row=2, column=1, padx=6, pady=3, sticky="we")
+        gel.grid(row=3, column=1, padx=6, pady=3, sticky="we")
         ttk.Entry(gel, textvariable=self.gelen_var, width=24).pack(side="left")
         ttk.Label(gel, text=" Port:").pack(side="left")
         ttk.Entry(gel, textvariable=self.gelen_port_var, width=6).pack(
             side="left", padx=(4, 0)
         )
         ttk.Label(self.imap_cerceve, text="Giden sunucu:").grid(
-            row=3, column=0, sticky="w"
+            row=4, column=0, sticky="w"
         )
         gid = ttk.Frame(self.imap_cerceve)
-        gid.grid(row=3, column=1, padx=6, pady=3, sticky="we")
+        gid.grid(row=4, column=1, padx=6, pady=3, sticky="we")
         ttk.Entry(gid, textvariable=self.giden_var, width=24).pack(side="left")
         ttk.Label(gid, text=" Port:").pack(side="left")
         ttk.Entry(gid, textvariable=self.giden_port_var, width=6).pack(
@@ -5570,7 +5640,7 @@ class HesapPenceresi(tk.Toplevel):
         )
         ttk.Button(
             self.imap_cerceve, text="Gmail'e ayarla", command=self._gmail_ayarla
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
         satir += 1
 
         # Yardım metni (türe göre değişir)
@@ -5591,7 +5661,71 @@ class HesapPenceresi(tk.Toplevel):
         )
 
         self.columnconfigure(1, weight=1)
+        # Kimlik yöntemi (imap): kayıttan ya da varsayılana kur
+        if (self.hesap or {}).get("tur") == "imap" \
+                and self.hesap.get("yontem") == "oauth2":
+            self.kimlik_var.set("Google (OAuth2)")
+        else:
+            self.kimlik_var.set("Uygulama parolası")
+        self._oauth_durum_guncelle()
         self._tur_goster()
+
+    # -------------------------------------------------------- oauth2 akışı
+
+    def _kimlik_goster(self):
+        """Seçili kimlik yöntemine göre alanları gösterir/gizler."""
+        oauth = "OAuth2" in (self.kimlik_var.get() or "")
+        if oauth:
+            self.parola_etiket.grid_remove()
+            self.parola_giris.grid_remove()
+            self.oauth_cerceve.grid()
+        else:
+            self.oauth_cerceve.grid_remove()
+            self.parola_etiket.grid()
+            self.parola_giris.grid()
+        # Yardım metni yönteme göre değişir
+        self._tur_goster()
+
+    def _oauth_durum_guncelle(self):
+        self.oauth_durum.configure(
+            text="✓ yetkilendirildi" if self._oauth_kayit else ""
+        )
+
+    def _oauth_yetkilendir(self):
+        """Tarayıcıda Google yetkilendirmesini çalıştırır (arka planda)."""
+        from . import google_oturum
+
+        eposta = self.eposta_var.get().strip()
+        if not eposta or "@" not in eposta:
+            messagebox.showwarning(
+                "Eksik alan", "Önce e-posta adresini girin.", parent=self
+            )
+            return
+        if not _google_istemci_hazirla(self):
+            return
+        self.oauth_durum.configure(
+            text="Tarayıcıda yetkilendirme bekleniyor…"
+        )
+
+        def is_():
+            try:
+                kayit = google_oturum.yetkilendir(eposta, None)
+            except google_oturum.OturumHatasi as exc:
+                self.after(0, lambda: self._oauth_sonuc(None, str(exc)))
+                return
+            self.after(0, lambda: self._oauth_sonuc(kayit, ""))
+
+        threading.Thread(target=is_, daemon=True).start()
+
+    def _oauth_sonuc(self, kayit, hata):
+        if hata:
+            self.oauth_durum.configure(text="")
+            messagebox.showerror(
+                "Yetkilendirme başarısız", hata, parent=self
+            )
+            return
+        self._oauth_kayit = dict(kayit or {})
+        self._oauth_durum_guncelle()
 
     # ------------------------------------------------------------------ yardım
 
@@ -5610,14 +5744,24 @@ class HesapPenceresi(tk.Toplevel):
         else:
             self.ews_cerceve.grid_remove()
             self.imap_cerceve.grid()
-            self.yardim_etiket.configure(
-                text=(
-                    "Gmail: Google Hesabı → Güvenlik → 2 Adımlı Doğrulama\n"
-                    "açıkken 16 haneli uygulama parolası oluşturun ve buraya\n"
-                    "yazın. Gmail'de IMAP etkinleştirilmiş olmalıdır\n"
-                    "(Ayarlar → Tüm Ayarlar → Yönlendirme ve POP/IMAP)."
+            if "OAuth2" in (self.kimlik_var.get() or ""):
+                self.yardim_etiket.configure(
+                    text=(
+                        "Google (OAuth2): 'Google ile yetkilendir…' düğmesi\n"
+                        "tarayıcıda bir kez giriş ister; parola gerekmez.\n"
+                        "İstemci kimliği ilk seferde client_secret JSON\n"
+                        "dosyasından istenir (bir kez)."
+                    )
                 )
-            )
+            else:
+                self.yardim_etiket.configure(
+                    text=(
+                        "Gmail: Google Hesabı → Güvenlik → 2 Adımlı Doğrulama\n"
+                        "açıkken 16 haneli uygulama parolası oluşturun ve buraya\n"
+                        "yazın. Gmail'de IMAP etkinleştirilmiş olmalıdır\n"
+                        "(Ayarlar → Tüm Ayarlar → Yönlendirme ve POP/IMAP)."
+                    )
+                )
 
     def _gmail_ayarla(self):
         """Gmail için hazır sunucu ayarlarını doldurur."""
@@ -5701,6 +5845,22 @@ class HesapPenceresi(tk.Toplevel):
                 "giden_port": giden_port,
                 "guvenli": "ssl",
             }
+            # Kimlik yöntemi
+            if "OAuth2" in (self.kimlik_var.get() or ""):
+                if not self._oauth_kayit:
+                    messagebox.showwarning(
+                        "Yetkilendirme yok",
+                        "Google yetkilendirmesi yapılmadı — 'Google ile "
+                        "yetkilendir…' düğmesini kullanın ya da uygulama "
+                        "parolası yöntemini seçin.",
+                        parent=self,
+                    )
+                    return
+                alanlar["yontem"] = "oauth2"
+                alanlar["oauth"] = self._oauth_kayit
+                alanlar["parola"] = ""  # eski parola kalmasın
+            else:
+                alanlar["yontem"] = "parola"
 
         if self.hesap is None:
             # Yeni hesap ekle ve ona geç
@@ -6646,6 +6806,16 @@ class TakvimHesapPenceresi(tk.Toplevel):
     """CalDAV takvim hesabı ekleme / düzenleme / silme penceresi."""
 
     SABLONLAR = {
+        "Gmail (OAuth2)": {
+            # OAuth2 ile çalışan **yeni** Google CalDAV ucu (eski
+            # www.google.com/calendar/dav ucu deprecated). E-posta alandan
+            # doldurulur. Tek yetkilendirme posta+takvimi birlikte verir.
+            "url": "https://apidata.googleusercontent.com/caldav/v2/{eposta}/events",
+            "oauth": True,
+            "ipucu": "Google (OAuth2): 'Google ile yetkilendir…' düğmesi "
+                     "tarayıcıda bir kez giriş ister; şifre gerekmez. "
+                     "CalDAV API Google Cloud projesinde etkin olmalı.",
+        },
         "Gmail": {
             # Google'ın CalDAV'ı: yeni uç (apidata.googleusercontent.com)
             # yalnız OAuth2 kabul ediyor; Basic + uygulama parolası yalnız
@@ -6674,7 +6844,7 @@ class TakvimHesapPenceresi(tk.Toplevel):
         super().__init__(ana)
         self.ana = ana
         self.title("Takvim Hesapları")
-        self.geometry("560x480")
+        self.geometry("560x560")
         self.transient(ana)
         ana._pencere_simgesi(self)
         self.grab_set()
@@ -6724,15 +6894,34 @@ class TakvimHesapPenceresi(tk.Toplevel):
             row=2, column=1, sticky="ew", pady=2, padx=(6, 0)
         )
 
-        ttk.Label(form, text="Şifre:").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Label(form, text="Yöntem:").grid(row=3, column=0, sticky="w", pady=2)
+        self.yontem_var = tk.StringVar(value="Uygulama şifresi")
+        ttk.Combobox(
+            form, textvariable=self.yontem_var, state="readonly",
+            values=("Uygulama şifresi", "Google (OAuth2)"), width=28,
+        ).grid(row=3, column=1, sticky="ew", pady=2, padx=(6, 0))
+        self.yontem_var.trace_add("write", lambda *_: self._yontem_goster())
+
+        ttk.Label(form, text="Şifre:").grid(row=4, column=0, sticky="w", pady=2)
         self.parola_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.parola_var, width=36, show="•").grid(
-            row=3, column=1, sticky="ew", pady=2, padx=(6, 0)
-        )
+        self.parola_giris = ttk.Entry(form, textvariable=self.parola_var,
+                                      width=36, show="•")
+        self.parola_giris.grid(row=4, column=1, sticky="ew", pady=2, padx=(6, 0))
+
+        # OAuth2: yetkilendirme düğmesi + durum
+        self.oauth_cerceve = ttk.Frame(form)
+        self.oauth_cerceve.grid(row=4, column=1, sticky="ew", pady=2, padx=(6, 0))
+        self._oauth_kayit = {}
+        ttk.Button(
+            self.oauth_cerceve, text="Google ile yetkilendir…",
+            command=self._oauth_yetkilendir,
+        ).pack(side="left")
+        self.oauth_durum = ttk.Label(self.oauth_cerceve, text="")
+        self.oauth_durum.pack(side="left", padx=(8, 0))
 
         # Hazır şablonlar
         sablon_alan = ttk.Frame(form)
-        sablon_alan.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        sablon_alan.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         ttk.Label(sablon_alan, text="Hazır:").pack(side="left")
         for ad in self.SABLONLAR:
             ttk.Button(
@@ -6742,7 +6931,7 @@ class TakvimHesapPenceresi(tk.Toplevel):
 
         self.ipucu = ttk.Label(form, text="", wraplength=500, justify="left",
                                foreground="#5f6368")
-        self.ipucu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.ipucu.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         # Düğmeler
         dugmeler = ttk.Frame(govde)
@@ -6754,6 +6943,7 @@ class TakvimHesapPenceresi(tk.Toplevel):
         ttk.Button(dugmeler, text="Kapat", command=self.destroy).pack(side="right")
 
         self._secili_id = ""
+        self._yontem_goster()
         self._listeyi_doldur()
 
     def _listeyi_doldur(self):
@@ -6775,6 +6965,62 @@ class TakvimHesapPenceresi(tk.Toplevel):
             self.url_var.set(t.get("url", ""))
             self.kullanici_var.set(t.get("kullanici", ""))
             self.parola_var.set(t.get("parola", ""))
+            self._oauth_kayit = dict(t.get("oauth") or {})
+            self.yontem_var.set(
+                "Google (OAuth2)" if t.get("yontem") == "oauth2"
+                else "Uygulama şifresi"
+            )
+            self._oauth_durum_guncelle()
+
+    def _yontem_goster(self):
+        oauth = "OAuth2" in (self.yontem_var.get() or "")
+        if oauth:
+            self.parola_giris.grid_remove()
+            self.oauth_cerceve.grid()
+        else:
+            self.oauth_cerceve.grid_remove()
+            self.parola_giris.grid()
+
+    def _oauth_durum_guncelle(self):
+        self.oauth_durum.configure(
+            text="✓ yetkilendirildi" if self._oauth_kayit else ""
+        )
+
+    def _oauth_yetkilendir(self):
+        """Tarayıcıda Google yetkilendirmesini çalıştırır (arka planda)."""
+        from . import google_oturum
+
+        eposta = self.kullanici_var.get().strip()
+        if not eposta or "@" not in eposta:
+            messagebox.showwarning(
+                "Eksik", "Önce e-posta adresini girin.", parent=self
+            )
+            return
+        if not _google_istemci_hazirla(self):
+            return
+        self.oauth_durum.configure(
+            text="Tarayıcıda yetkilendirme bekleniyor…"
+        )
+
+        def is_():
+            try:
+                kayit = google_oturum.yetkilendir(eposta, None)
+            except google_oturum.OturumHatasi as exc:
+                self.after(0, lambda: self._oauth_sonuc(None, str(exc)))
+                return
+            self.after(0, lambda: self._oauth_sonuc(kayit, ""))
+
+        threading.Thread(target=is_, daemon=True).start()
+
+    def _oauth_sonuc(self, kayit, hata):
+        if hata:
+            self.oauth_durum.configure(text="")
+            messagebox.showerror(
+                "Yetkilendirme başarısız", hata, parent=self
+            )
+            return
+        self._oauth_kayit = dict(kayit or {})
+        self._oauth_durum_guncelle()
 
     def _sablon(self, ad: str):
         s = self.SABLONLAR[ad]
@@ -6787,12 +7033,17 @@ class TakvimHesapPenceresi(tk.Toplevel):
         if not self.ad_var.get():
             self.ad_var.set(ad)
         self.ipucu.configure(text=s["ipucu"])
+        if s.get("oauth"):
+            self.yontem_var.set("Google (OAuth2)")
+        else:
+            self.yontem_var.set("Uygulama şifresi")
 
     def _veri_al(self) -> dict | None:
         ad = self.ad_var.get().strip()
         url = self.url_var.get().strip()
         kullanici = self.kullanici_var.get().strip()
         parola = self.parola_var.get()
+        oauth = "OAuth2" in (self.yontem_var.get() or "")
         if not kullanici:
             messagebox.showwarning("Eksik", "E-posta boş.", parent=self)
             return None
@@ -6804,13 +7055,26 @@ class TakvimHesapPenceresi(tk.Toplevel):
             return None
         if not ad:
             ad = kullanici
-        return {
+        veri = {
             "tur": "caldav",
             "ad": ad,
             "url": url,
             "kullanici": kullanici,
-            "parola": parola,
+            "parola": "" if oauth else parola,
+            "yontem": "oauth2" if oauth else "parola",
         }
+        if oauth:
+            if not self._oauth_kayit:
+                messagebox.showwarning(
+                    "Yetkilendirme yok",
+                    "Google yetkilendirmesi yapılmadı — 'Google ile "
+                    "yetkilendir…' düğmesini kullanın ya da uygulama "
+                    "şifresi yöntemini seçin.",
+                    parent=self,
+                )
+                return None
+            veri["oauth"] = self._oauth_kayit
+        return veri
 
     def _ekle(self):
         veri = self._veri_al()
@@ -6850,6 +7114,9 @@ class TakvimHesapPenceresi(tk.Toplevel):
         self._secili_id = ""
         self.ad_var.set(""); self.url_var.set("")
         self.kullanici_var.set(""); self.parola_var.set("")
+        self._oauth_kayit = {}
+        self.yontem_var.set("Uygulama şifresi")
+        self._oauth_durum_guncelle()
         self._listeyi_doldur()
         self.ana.takvim_yuklendi = False
         self.ana.durum.set("Takvim hesabı silindi.")
@@ -6865,7 +7132,11 @@ class TakvimHesapPenceresi(tk.Toplevel):
         def is_():
             from .caldav import CalDavIstemci, CalDavHata
 
-            c = CalDavIstemci(veri["url"], veri["kullanici"], veri["parola"])
+            oauth = veri.get("yontem") == "oauth2" and veri.get("oauth")
+            c = CalDavIstemci(
+                veri["url"], veri["kullanici"], veri["parola"],
+                oauth=veri.get("oauth") if oauth else None,
+            )
             try:
                 koleksiyonlar = c.kesfet()
             except CalDavHata as exc:

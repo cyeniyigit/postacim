@@ -182,10 +182,26 @@ klasöre tıklayınca uygulama o hesaba geçer, mesajları o hesaptan yükler.
 
 ### Gmail kurulumu (ilk seferde)
 
+İki yöntem var; **Google (OAuth2)** önerilir:
+
+**Google (OAuth2) — parola gerekmez:**
+
+1. **Hesaplar → Hesap Ekle… → Gmail veya IMAP** → E-posta adresinizi yazın
+2. **Kimlik:** "Google (OAuth2)" seçin → **"Google ile yetkilendir…"**
+3. Tarayıcıda Google izin ekranı açılır — "Postacım, Google Hesabınıza
+   erişim istiyor" → **İzin ver**
+4. İlk seferde Google Cloud'dan indirdiğiniz **client_secret JSON**
+   dosyası sorulur (bir kez; `~/.config/postacim/` altına 0600 izinle
+   kopyalanır — kendinize bir istemci oluşturmak için: Google Cloud
+   Console → proje → CalDAV API etkin → OAuth client (Desktop app))
+5. Token otomatik yenilenir; IMAP/SMTP ve CalDAV birlikte yetkilendirilir
+
+**Uygulama parolası (yedek yöntem):**
+
 1. **IMAP'i etkinleştirin:** Gmail → Tüm Ayarlar → Yönlendirme ve POP/IMAP →
    "IMAP erişimi etkinleştir".
 2. **Uygulama parolası üretin:** Google Hesabı → Güvenlik → 2 Adımlı
-   Doğrulama **açıkken** → "Uygulama parolaları" → 16 haneli parola alın.
+   Doğrulama **açken** → "Uygulama parolaları" → 16 haneli parola alın.
    (Gmail, IMAP/SMTP'te normal parolayı reddeder.)
 3. Postacım'da **Hesaplar → Hesap Ekle… → Gmail veya IMAP** (veya
    pencerede "Gmail'e ayarla") → e-posta + uygulama parolası → Kaydet.
@@ -208,18 +224,27 @@ kaynaktan beslenir:
 Yahoo, Nextcloud) alanları doldurur. CalDAV çalışması **e-posta hesabından
 bağımsızdır**: Gmail e-posta hesabı hiç eklenmemiş olsa da takvim eklenebilir.
 
-### Gmail takvimi (uygulama parolası)
+### Gmail takvimi
+
+İki yöntem var:
+
+**Google (OAuth2) — önerilir:** Takvim Hesapları → şablon
+**"Gmail (OAuth2)"** → e-posta + **"Google ile yetkilendir…"**.
+Google'ın **yeni** CalDAV ucu (`apidata.googleusercontent.com`) bu
+yolla çalışır; şifre gerekmez. (Posta hesabında OAuth2 zaten varsa
+aynı yetkilendirme takvimi de kapsar.)
+
+**Uygulama parolası (yedek):**
 
 1. **2 Adımlı Doğrulama** açık olsun (Google Hesabı → Güvenlik).
 2. Google Hesabı → Güvenlik → **Uygulama parolaları** → 16 haneli parola üretin.
 3. Postacım'da **Takvim Hesapları → Gmail** → e-posta + uygulama parolası →
    **Bağlan**.
 
-> **Önemli — Google'ın uç adresi:** Şablondaki adres
-> `https://www.google.com/calendar/dav/<eposta>/events` **eski** uçtır ve
-> uygulama parolasıyla çalışır. Google'ın yeni ucu
-> (`apidata.googleusercontent.com/caldav/…`) yalnızca OAuth2 kabul eder;
-> uygulama parolasıyla 401 verir. Bu yüzden **eski uç** kullanılır.
+> **Not — uç adresi:** Uygulama parolası yalnız **eski** uçta
+> (`https://www.google.com/calendar/dav/<eposta>/events`) çalışır;
+> Google'ın yeni ucu yalnızca OAuth2 kabul eder (yukarıdaki Gmail (OAuth2)
+> şablonu). Eski uç deprecated durumdadır — mümkünse OAuth2 kullanın.
 
 Diğer sağlayıcılarda adres genelde şu kalıbı izler:
 `https://<sunucu>/remote.php/dav/calendars/<kullanici>/` (Nextcloud) ya da
@@ -354,8 +379,12 @@ Klasörleri (sayaçlarıyla), gelen kutusunu, sayfalamayı ve aramayı dener.
   arasında boşluk yok, tarih sütunu tam görünür; **başlık çubuğunda uygulama
   simgesi**, görev çubuğunda doğru ad/simge (`WM_CLASS` eşleşmesi)
 - **Hakkında:** logolu, sürüm bilgili pencere (Yardım → Hakkında)
-- **Modern tema:** Sun Valley (Windows 11 tarzı) — **Görünüm** menüsünden
-  açık/koyu tema seçilebilir, tercih hatırlanır; Ubuntu yazı tipi
+- **Google (OAuth2):** Gmail hesabı **parolasız** — tarayıcıda tek izinle
+  IMAP/SMTP (XOAUTH2) + CalDAV (Bearer, yeni Google uç) birlikte
+  yetkilendirilir; token otomatik yenilenir (ayrıntı: Gmail kurulumu
+  bölümü). Uygulama parolası yöntemi yedekte kalır
+- **Modern tema:** Sun Valley (Windows 11 tarzı) — tema Ayarlar ▸
+  Genel'den seçilir (Açık/Koyu/Mavi), tercih hatırlanır; Ubuntu yazı tipi
 
 ## Kısayollar
 

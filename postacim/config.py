@@ -36,6 +36,7 @@ HESAP_VARSAYILAN = {
     },
     "imap": {
         "tur": "imap",
+        "yontem": "parola",  # parola (uygulama parolası) | oauth2
         "gelen_sunucu": "imap.gmail.com",
         "gelen_port": 993,
         "giden_sunucu": "smtp.gmail.com",

@@ -1962,3 +1962,88 @@ açamayacağı durumda düz metin olarak yüklesin"
   hazırlanıyor; ~1,3 sn sonra HTML + tarih•gönderen durumu.
 - Fallback (denetim False): güvenli metin görünümü + çökme uyarısı.
 - run_all.sh 18/18 geçti.
+
+---
+
+# 2026-11-25 — Google OAuth2 desteği (Gmail posta + takvim)
+
+> **Kaldığımız yer:** OAuth2 akışı kodlandı ve çevrimdışı testlerle
+> doğrulandı. Gerçek yetkilendirme + canlı IMAP/CalDAV doğrulaması
+> kullanıcı akışıyla yapılacak. Önizleme gösterildi — onay +
+> "github push" bekleniyor.
+
+## İstek
+"bu google oauth2 sistemini öncelikle ekleyelim"
+
+Kullanıcı kararları (netleştirme sorusuyla):
+- İstemci kimliği: **uygulamaya gömülü değil, kullanıcının Google Cloud
+  kurulumundan** (Personal mod — token 7 günde sona ermez, doğrulama
+  gerekmez). Bir kez client_secret JSON seçilir; `~/.config/postacim/
+  google_istemci.json` altına 0600 ile kopyalanır (depoya girmez).
+- Kapsam: **posta + takvim birlikte** (tek yetkilendirme:
+  `https://mail.google.com/` + `https://www.googleapis.com/auth/calendar`).
+- Uygulama parolası yöntemi **yedekte kalmaya devam** eder.
+
+## Google Cloud tarafı (kullanıcı tamamladı)
+- Proje: personal-mode-app (`orbital-bank-515817-v7`), OAuth2 istemcisi
+  **Desktop app** türü; client_secret JSON indirildi.
+- **CalDAV API etkinleştirildi** (etkin değilken CalDAV istekleri 403).
+
+## Değişiklikler
+- **`postacim/google_oturum.py` (yeni):** PKCE (S256) + loopback
+  (`http://localhost:<port>`) yetkilendirme akışı; `yetkilendir()`,
+  `tazele()`, `token_al()`; token kaydını çağıran saklar (hesap.json,
+  0600). `access_type=offline` + `prompt=consent` ile refresh token
+  garantisi. XOAUTH2 dize üreticisi (`_xoauth2_dize`).
+- **`imap.py`:** `yontem="oauth2"` hesaplarında IMAP `AUTHENTICATE
+  XOAUTH2` ve SMTP `AUTH XOAUTH2` (`_xoauth2_giris`, `_smtp_xoauth2`);
+  hata yanıtları SASL gereği boş yanıtla tamamlanır; token süresi
+  dolduğunda sessiz yenileme + `token_sakla` geri çağrısıyla
+  hesap.json'a yazım.
+- **`caldav.py`:** `CalDavIstemci(..., oauth=..., token_sakla=...)`;
+  OAuth2 modunda Basic auth yerine **Bearer** başlığı; 401'de tek
+  yenileme ile isteği tekrarlar.
+- **`config.py`:** IMAP hesap varsayılanına `yontem: "parola"`.
+- **`ui.py`:**
+  - Hesap penceresi (IMAP): "Kimlik" combobox (Uygulama parolası /
+    Google (OAuth2)); OAuth2'de parola alanı gizlenir, "Google ile
+    yetkilendir…" düğmesi + durum etiketi; kayıtta `yontem`/`oauth`
+    yazılır, eski parola temizlenir.
+  - Takvim Hesapları: "Yöntem" combobox + **Gmail (OAuth2)** şablonu
+    (yeni uç `apidata.googleusercontent.com/caldav/v2/{eposta}/events`);
+    aynı yetkilendirme düğmesi.
+  - `_istemci_kur` / `_caldav_istemci`: token_sakla bağları
+    (hesap_guncelle / takvim_guncelle ile 0600 kayıt).
+  - `_google_istemci_hazirla`: client_secret JSON seçim penceresi
+    (bir kez; kopyalanır).
+
+## Testler
+- **`tests/google_oturum_test.py` (yeni, çevrimdışı, 16 denetim):**
+  XOAUTH2 dize biçimi, istemci kimliği kaydet/oku (0600), token
+  yenileme (refresh korunumu), `token_al` ağsızlık, loopback yetki
+  akışı (sahte tarayıcı → kod → token), izin reddi, IMAP XOAUTH2
+  girişi (sahte bağlantı), CalDAV Bearer başlığı + 401 yenileme,
+  Basic yolların bozulmadığı denetimleri.
+- run_all.sh **19/19 geçti** (yeni test dahil).
+- Önizleme: `tests/oauth_onizleme.py` — Hesap ekle + Takvim Hesapları
+  pencerelerinin OAuth2 görünümleri Xvfb'de çizildi.
+
+## Kalan (bir sonraki oturum)
+- [ ] Canlı doğrulama: kullanıcı Hesap Ekle → Gmail (OAuth2) ile
+      yetkilendirecek; IMAP listeleme + SMTP + CalDAV çekme
+      gerçek hesapta test edilecek.
+- [ ] README'nin Gmail bölümlerine OAuth2 seçeneği eklenecek (push
+      öncesi).
+- [ ] Hesaptan Çıkış'ta OAuth token'ının korunması/mantığı (şu an
+      korunur — yalnız parola silinir) karar olarak belgelenecek.
+
+→ KULLANICI (2026-11-25): "test yapalım… evet geçir, dağıtıma çıkalım"
+→ CANLI DOĞRULAMA: tarayıcı yetkilendirmesi (Postacım branding) +
+  IMAP XOAUTH2 (13 klasör) + SMTP XOAUTH2 + CalDAV keşif + 30 günlük
+  randevu çekimi — hepsi OK. Yolda saptanan hata düzeltildi:
+  imaplib authenticate geri çağrısı HAM bayt döndürmeliydi (çift
+  base64 → "Invalid SASL argument"); test de güncellendi (16/16).
+  Kullanıcının Gmail hesabı hesap.json'da yontem=oauth2'ye geçirildi
+  (öncesi .oauth2_oncesi_yedek yedeği, 0600). README Gmail/Takvim
+  bölümlerine OAuth2 yöntemi eklendi. Sızıntı denetimi temiz
+  (canlı test betiği e-postayı env'den okur: POSTACIM_OAUTH_TEST_KULLANICI).

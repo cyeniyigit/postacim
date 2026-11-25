@@ -3,6 +3,35 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.35] — 2026-11-25
+
+### Eklenen
+- **Google OAuth2 desteği (Gmail posta + takvim):** uygulama parolasına
+  alternatif olarak Google hesabı tarayıcıda tek bir yetkilendirmeyle
+  IMAP/SMTP (XOAUTH2) ve CalDAV (Bearer) erişimi alır.
+  - `postacim/google_oturum.py` (yeni): PKCE + loopback yetkilendirme
+    akışı, token depolama (0600) ve sessiz yenileme. İstemci kimliği
+    (client_secret JSON) bir kez seçilir, `~/.config/postacim/
+    google_istemci.json` altına kopyalanır (depoya girmez).
+  - `imap.py`: `yontem="oauth2"` hesaplarında IMAP `AUTHENTICATE
+    XOAUTH2` ve SMTP `AUTH XOAUTH2`; token süresi dolduğunda
+    otomatik yenilenir ve `hesap.json`'a yazılır.
+  - `caldav.py`: OAuth2 hesaplarında Bearer başlığı; 401'de tek
+    yenileme ile yeniden dener. Google için **yeni** uç
+    (`apidata.googleusercontent.com/caldav/v2/…`) kullanılır
+    (eski uç deprecated).
+  - Hesap penceresi: IMAP'ta "Kimlik" seçimi — Uygulama parolası /
+    Google (OAuth2) + "Google ile yetkilendir…" düğmesi.
+  - Takvim hesapları: "Yöntem" seçimi + **Gmail (OAuth2)** şablonu.
+  - Not: Google Cloud tarafında CalDAV API etkin olmalı; Personal
+    mod istemci tokende 7 günlük süre koymaz.
+
+### Testler
+- `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
+  istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
+  yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
+  Bearer + 401 yenileme. run_all.sh 19/19 geçti.
+
 ## [0.1.34] — 2026-11-24
 
 ### Değiştirilen

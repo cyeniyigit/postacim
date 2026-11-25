@@ -30,6 +30,7 @@ from typing import Iterable
 
 import requests
 
+from . import google_oturum
 from .ews import (
     Ek,
     EwsHata,
@@ -148,6 +149,11 @@ class ImapIstemci:
         self.hesap = dict(hesap)
         self.kullanici = hesap.get("kullanici", "") or ""
         self.parola = hesap.get("parola", "") or ""
+        # Kimlik yöntemi: "parola" (uygulama parolası) | "oauth2"
+        self.yontem = hesap.get("yontem", "parola") or "parola"
+        self.oauth = dict(hesap.get("oauth") or {})
+        # Yenilenen token'ı kayıt altına alan işlev (ui.py kurar)
+        self.token_sakla = None
         self.gelen_sunucu = hesap.get("gelen_sunucu", "imap.gmail.com")
         self.gelen_port = int(hesap.get("gelen_port", 993))
         self.giden_sunucu = hesap.get("giden_sunucu", "smtp.gmail.com")
@@ -169,10 +175,8 @@ class ImapIstemci:
 
     def _yeni_baglanti(self) -> imaplib.IMAP4:
         """Yeni bir IMAP oturumu açar ve giriş yapar; hazır bağlantı döner."""
-        if not self.kullanici or not self.parola:
-            raise EwsYetkiHatasi(
-                "E-posta veya uygulama parolası girilmemiş."
-            )
+        if not self.kullanici:
+            raise EwsYetkiHatasi("E-posta adresi girilmemiş.")
         try:
             if self.guvenli == "starttls":
                 baglanti = imaplib.IMAP4(self.gelen_sunucu, self.gelen_port,
@@ -181,12 +185,25 @@ class ImapIstemci:
             else:
                 baglanti = imaplib.IMAP4_SSL(self.gelen_sunucu, self.gelen_port,
                                              timeout=30)
-            baglanti.login(self.kullanici, self.parola)
+            if self.yontem == "oauth2":
+                self._xoauth2_giris(baglanti)
+            else:
+                if not self.parola:
+                    raise EwsYetkiHatasi(
+                        "E-posta veya uygulama parolası girilmemiş."
+                    )
+                baglanti.login(self.kullanici, self.parola)
             return baglanti
         except (imaplib.IMAP4.error, imaplib.IMAP4.abort) as exc:
             metin = str(exc).lower()
             if any(x in metin for x in ("auth", "login", "credential",
                                         "password", "user")):
+                if self.yontem == "oauth2":
+                    raise EwsYetkiHatasi(
+                        "Google kimlik doğrulaması başarısız — hesabı "
+                        "yeniden yetkilendirmek gerekebilir (Hesaplar → "
+                        "Hesap Düzenle → Google ile yetkilendir)."
+                    ) from exc
                 raise EwsYetkiHatasi(
                     "IMAP kimlik doğrulama başarısız. Gmail için normal parola "
                     "değil, uygulama parolası kullanılmalı (Google Hesabı → "
@@ -197,6 +214,50 @@ class ImapIstemci:
             raise requests.RequestException(
                 f"Bağlantı kurulamadı: {self.gelen_sunucu}:{self.gelen_port} — {exc}"
             ) from exc
+
+    def _token(self) -> str:
+        """Geçerli Google erişim token'ı (süresi geçtiyse yeniler)."""
+        try:
+            return google_oturum.token_al(
+                self.oauth, tazele_islevi=self.token_sakla
+            )
+        except google_oturum.YetkiHatasi as exc:
+            raise EwsYetkiHatasi(
+                f"Google yetkilendirmesi geçersiz: {exc} — hesabı yeniden "
+                "yetkilendirin."
+            ) from exc
+        except google_oturum.OturumHatasi as exc:
+            raise EwsHata(f"Google oturumu hatası: {exc}") from exc
+
+    def _xoauth2_giris(self, baglanti: imaplib.IMAP4) -> None:
+        """Gmail IMAP'ta SASL XOAUTH2 ile giriş yapar.
+
+        ÖNEMLİ: `imaplib.authenticate` geri çağrının döndürdüğü ham veriyi
+        KENDİSİ base64'ler → buraya **ham** baytlar verilmeli; hazır
+        base64 dizesi verilirse çift kodlanır ve Gmail "Invalid SASL
+        argument" (BAD) der. (SMTP yolu `docmd` ile gider, orada base64
+        gerekir — iki yol farklıdır.)
+        """
+        token = self._token()
+        ham = (
+            f"user={self.kullanici}\x01auth=Bearer {token}\x01\x01"
+        ).encode("utf-8")
+
+        def geri_cagri(meydan_okuma: bytes) -> bytes:
+            if geri_cagri.ikinci:
+                # Token reddedildi: sunucunun hata meydan okumasına boş yanıt
+                geri_cagri.ikinci = False
+                raise imaplib.IMAP4.error(
+                    "XOAUTH2 reddedildi: "
+                    + base64.b64decode(meydan_okuma or b"").decode(
+                        "utf-8", "replace"
+                    )
+                )
+            geri_cagri.ikinci = True
+            return ham
+
+        geri_cagri.ikinci = False
+        baglanti.authenticate("XOAUTH2", geri_cagri)
 
     def _baglan(self) -> None:
         with self._kilit:
@@ -806,7 +867,10 @@ class ImapIstemci:
                                       timeout=30)
                 sunucu.starttls()
             with sunucu:
-                sunucu.login(self.kullanici, self.parola)
+                if self.yontem == "oauth2":
+                    self._smtp_xoauth2(sunucu)
+                else:
+                    sunucu.login(self.kullanici, self.parola)
                 sunucu.send_message(
                     mesaj,
                     from_addr=self.kullanici,
@@ -826,6 +890,23 @@ class ImapIstemci:
             raise requests.RequestException(
                 f"Bağlantı kurulamadı: {self.giden_sunucu}:{self.giden_port} — {exc}"
             ) from exc
+
+    def _smtp_xoauth2(self, sunucu: smtplib.SMTP) -> None:
+        """SMTP'te XOAUTH2 ile giriş yapar (Gmail)."""
+        token = self._token()
+        ham = google_oturum._xoauth2_dize(self.kullanici, token)
+        kod, yanit = sunucu.docmd("AUTH", "XOAUTH2 " + ham)
+        if kod == 334:
+            # Token reddedildi: sunucu hata meydan okuması gönderdi,
+            # SASL gereği boş yanıt verilir ve reddi tamamlanır.
+            kod2, yanit2 = sunucu.docmd("")
+            yanit = yanit2 or yanit
+            kod = kod2
+        if kod != 235:
+            detay = b" ".join(yanit or [b""]).decode("ascii", "replace")
+            raise EwsYetkiHatasi(
+                f"SMTP kimlik doğrulama başarısız (OAuth2): {detay}"
+            )
 
     @_kilitli
     def taslağa_kaydet(self, alici: str, konu: str, govde: str) -> str:

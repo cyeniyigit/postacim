@@ -20,6 +20,8 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from . import google_oturum
+
 NS_DAV = "DAV:"
 NS_CALENDAR = "urn:ietf:params:xml:ns:caldav"
 NS_ICS = "http://calendarserver.org/ns/"
@@ -341,18 +343,42 @@ class CalDavIstemci:
         kullanici: str,
         parola: str,
         zaman_asimi: int = 30,
+        oauth: dict | None = None,
+        token_sakla=None,
     ):
+        """CalDAV istemcisi.
+
+        `oauth` verilirse **Google OAuth2** ile bağlanılır (Bearer token;
+        Basic auth yerine), 401'de token sessizce yenilenir. Verilmezse
+        klasik kullanıcı-adı/parola (Basic) kimlik doğrulama çalışır.
+        """
         self.taban_url = taban_url.rstrip("/") + "/"
         self.kullanici = kullanici
         self.parola = parola
         self.zaman_asimi = zaman_asimi
+        self.oauth = dict(oauth) if oauth else None
+        self.token_sakla = token_sakla
         self.oturum = requests.Session()
-        self.oturum.auth = (kullanici, parola)
+        self.oturum.auth = None if self.oauth else (kullanici, parola)
         self.oturum.headers.update(HEADERS_BASE)
         self._koleksiyonlar: list[CalDavTakvim] = []
         self._ana_koleksiyon: str = ""
 
     # ---- HTTP yardımcıları
+
+    def _token(self) -> str:
+        """Geçerli Google erişim token'ı (süresi geçtiyse yeniler)."""
+        try:
+            return google_oturum.token_al(
+                self.oauth, tazele_islevi=self.token_sakla
+            )
+        except google_oturum.YetkiHatasi as exc:
+            raise CalDavHata(
+                f"Google yetkilendirmesi geçersiz: {exc} — takvim hesabını "
+                "yeniden yetkilendirin."
+            ) from exc
+        except google_oturum.OturumHatasi as exc:
+            raise CalDavHata(f"Google oturumu hatası: {exc}") from exc
 
     def _istek(
         self,
@@ -361,10 +387,13 @@ class CalDavIstemci:
         veri: bytes | str | None = None,
         ek_basliklar: dict | None = None,
         kabul: str | None = None,
+        _yenile_iddia: bool = True,
     ) -> requests.Response:
         basliklar = dict(ek_basliklar or {})
         if kabul:
             basliklar["Depth"] = kabul
+        if self.oauth:
+            basliklar["Authorization"] = "Bearer " + self._token()
         try:
             yanit = self.oturum.request(
                 method,
@@ -376,6 +405,23 @@ class CalDavIstemci:
         except requests.RequestException as exc:
             raise CalDavHata(f"Bağlantı hatası: {exc}") from exc
         if yanit.status_code in (401, 403):
+            if self.oauth and _yenile_iddia:
+                # Token bayat olabilir: zorla yenile, bir kez daha dene
+                try:
+                    self.oauth = google_oturum.tazele(self.oauth)
+                except google_oturum.OturumHatasi as exc:
+                    raise CalDavHata(
+                        f"Google yetkilendirmesi geçersiz: {exc}"
+                    ) from exc
+                if self.token_sakla is not None:
+                    try:
+                        self.token_sakla(self.oauth)
+                    except Exception:
+                        pass
+                return self._istek(
+                    method, url, veri, ek_basliklar, kabul,
+                    _yenile_iddia=False,
+                )
             raise CalDavHata("Kimlik doğrulama başarısız (401/403).")
         if yanit.status_code >= 400 and yanit.status_code not in (404, 409, 410, 412):
             raise CalDavHata(
