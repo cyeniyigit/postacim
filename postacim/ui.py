@@ -2540,7 +2540,7 @@ class Postacim(tk.Tk):
             return self.istemci
         istemci = self._istemciler.get(hedef.get("id"))
         if istemci is None:
-            if not hedef.get("parola"):
+            if not _hesap_kimlik_tam(hedef):
                 if hedef.get("id") == self.aktif_id:
                     raise EwsYetkiHatasi("Oturum kapalı — göndermek için giriş yapın.")
                 ad = hedef.get("ad") or "hesap"
@@ -2559,7 +2559,7 @@ class Postacim(tk.Tk):
         if hesap is None:
             self._hesap_ekle_penceresi()
             return False
-        if not hesap.get("kullanici") or not hesap.get("parola"):
+        if not _hesap_kimlik_tam(hesap):
             if not self._kimlik_sor():
                 return False
             hesap = self.ayarlar.aktif_hesap()
@@ -2581,6 +2581,38 @@ class Postacim(tk.Tk):
         if self._kimlik_sor():
             self.yenile()
 
+    def _oauth_yeniden_yetkilendir(self, pencere, hesap, sonuc, durum):
+        """Giriş penceresinden Google yetkilendirmesini yeniden çalıştırır.
+
+        Tarayıcıda izin akışı arka planda yürür; bittiğinde token hesap
+        kaydına yazılır ve pencere "tamam" ile kapanır (bağlanma devam eder).
+        """
+        from . import google_oturum
+
+        eposta = (hesap.get("kullanici") or "").strip()
+        if not _google_istemci_hazirla(pencere):
+            return
+        durum.configure(text="Tarayıcıda yetkilendirme bekleniyor…")
+
+        def is_():
+            try:
+                kayit = google_oturum.yetkilendir(eposta, None)
+            except google_oturum.OturumHatasi as exc:
+                pencere.after(
+                    0, lambda: durum.configure(text=f"Hata: {exc}")
+                )
+                return
+
+            def tamamla():
+                hesap["oauth"] = kayit
+                self.ayarlar.kaydet()
+                sonuc["tamam"] = True
+                pencere.destroy()
+
+            pencere.after(0, tamamla)
+
+        threading.Thread(target=is_, daemon=True).start()
+
     def _kimlik_sor(self, hata: str | None = None):
         """Aktif hesabın giriş penceresi (kullanıcı + parola).
 
@@ -2601,6 +2633,7 @@ class Postacim(tk.Tk):
 
     def _kimlik_penceresi(self, hesap: dict, hata: str | None) -> bool:
         imap_mi = hesap.get("tur") == "imap"
+        oauth2_mi = imap_mi and hesap.get("yontem") == "oauth2"
         pencere = tk.Toplevel(self)
         pencere.title(
             f"Postacım — {hesap.get('ad') or 'Bağlantı bilgileri'}"
@@ -2615,7 +2648,13 @@ class Postacim(tk.Tk):
                 wraplength=360,
             ).grid(row=0, column=0, columnspan=2, padx=14, pady=(12, 6), sticky="w")
             satir = 1
-        if imap_mi:
+        if oauth2_mi:
+            yardim = (
+                "Bu hesap Google (OAuth2) ile bağlıdır. Token'ın süresi\n"
+                "geçti ya da yetki iptal edildi — düğmeyle yeniden\n"
+                "yetkilendirin (tarayıcıda tek izin, parola gerekmez)."
+            )
+        elif imap_mi:
             yardim = (
                 "Gmail için: Google Hesabı → Güvenlik → 2 Adımlı Doğrulama\n"
                 "açıkken 16 haneli uygulama parolası oluşturun (normal parola\n"
@@ -2631,6 +2670,23 @@ class Postacim(tk.Tk):
         ttk.Label(
             pencere, text=yardim, justify="left",
         ).grid(row=satir, column=0, columnspan=2, padx=14, pady=(12, 8), sticky="w")
+
+        sonuc = {"tamam": False}
+
+        if oauth2_mi:
+            # OAuth2: parola alanları yok — yeniden yetkilendirme düğmesi
+            durum = ttk.Label(pencere, text="", foreground="#5f6368")
+            ttk.Button(
+                pencere, text="Google ile yetkilendir…",
+                command=lambda: self._oauth_yeniden_yetkilendir(
+                    pencere, hesap, sonuc, durum
+                ),
+            ).grid(row=satir + 1, column=0, columnspan=2, pady=6)
+            durum.grid(row=satir + 2, column=0, columnspan=2, pady=(0, 10))
+            pencere.protocol("WM_DELETE_WINDOW", pencere.destroy)
+            pencere.wait_window()
+            return sonuc["tamam"]
+
         kullanici_var = tk.StringVar(value=hesap.get("kullanici", ""))
         parola_var = tk.StringVar(value="")
         ttk.Label(pencere, text=kullanici_etiket).grid(
@@ -3464,7 +3520,7 @@ class Postacim(tk.Tk):
             hid = h.get("id")
             if not hid or hid == self.aktif_id:
                 continue
-            if not h.get("kullanici") or not h.get("parola"):
+            if not _hesap_kimlik_tam(h):
                 continue
             try:
                 istemci = self._istemciler.get(hid)
@@ -3686,7 +3742,7 @@ class Postacim(tk.Tk):
                 continue
             etiket = hesap.get("ad") or hesap.get("kullanici") or "Hesap"
             if hid != self.aktif_id and hid not in self._hesap_klasorleri:
-                if not (hesap.get("kullanici") and hesap.get("parola")):
+                if not _hesap_kimlik_tam(hesap):
                     etiket += "  (bağlanmak için tıklayın)"
             kok = f"hesap:{hid}"
             agac.insert(
@@ -5424,6 +5480,18 @@ class HakkindaPenceresi(tk.Toplevel):
         except tk.TclError:
             if deneme < 20 and self.winfo_exists():
                 self.after(50, lambda: self._grab_al(deneme + 1))
+
+
+def _hesap_kimlik_tam(hesap: dict) -> bool:
+    """Hesapta bağlanacak kimlik var mı?
+
+    OAuth2 (Gmail) hesaplarında parola boştur — **refresh token** kimliktir.
+    Diğer yöntemlerde kullanıcı + parola aranır. Açılış/giriş pencereleri
+    OAuth2 hesabına parola sormamak için bu denetimi kullanır.
+    """
+    if (hesap or {}).get("yontem") == "oauth2":
+        return bool((hesap.get("oauth") or {}).get("refresh_token"))
+    return bool(hesap.get("kullanici") and hesap.get("parola"))
 
 
 def _google_istemci_hazirla(parent) -> bool:
