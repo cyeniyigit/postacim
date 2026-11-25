@@ -2047,3 +2047,8 @@ Kullanıcı kararları (netleştirme sorusuyla):
   (öncesi .oauth2_oncesi_yedek yedeği, 0600). README Gmail/Takvim
   bölümlerine OAuth2 yöntemi eklendi. Sızıntı denetimi temiz
   (canlı test betiği e-postayı env'den okur: POSTACIM_OAUTH_TEST_KULLANICI).
+
+→ KULLANICI: "github push" (2026-11-25)
+→ GERÇEKLEŞTİ: 0.1.36 (MEB desteği + sertifika onarımı + pencere
+taşmaları) GitHub'a push edildi. Kullanıcı v0.1.36 release'ini
+yayınlamalı (v0.1.35 tag'i zaten 5da1614'te yayımlanmıştı).

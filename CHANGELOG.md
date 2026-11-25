@@ -26,6 +26,27 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   - Not: Google Cloud tarafında CalDAV API etkin olmalı; Personal
     mod istemci tokende 7 günlük süre koymaz.
 
+### Düzeltilen
+- **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
+  denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
+  açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı
+  eklendi (OAuth2'de refresh token kimlik sayılır). Giriş penceresi
+  OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
+- **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
+  kalmıyordu).
+- **Global tema paleti:** `_stil_uygula` artık `tk_setPalette` ile Tk'nın
+  klasik paletini temaya çevirir — tüm açık pencereler ve bundan sonra
+  açılacak alt pencereler (dialog zeminleri, menüler) seçili temayı
+  izler; pencereye pencere düzeltme gerekmez.
+
+### Testler
+- `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
+  istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
+  yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
+  Bearer + 401 yenileme. run_all.sh **19/19** geçti.
+
+## [0.1.36] — 2026-11-25
+
 ### Eklenen
 - **MEB (meb.gov.tr) e-posta desteği:** Hesap penceresinde "MEB'e
   ayarla" düğmesi — IMAP `epostagelen.meb.gov.tr:993` + SMTP
@@ -38,26 +59,11 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   etkin.
 
 ### Düzeltilen
-- **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
-  denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
-  açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı
-  eklendi (OAuth2'de refresh token kimlik sayılır). Giriş penceresi
-  OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
-- **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
-  kalmıyordu).
 - **Pencere taşmaları:** Hesap penceresi (470→640px) ve Takvim
   Hesapları penceresinde alanlar/düğmeler pencere dışına taşıyordu;
   ölçüme dayalı boyutlandırma + şablon düğmelerinin 2 sütunlu ızgarası.
-- **Global tema paleti:** `_stil_uygula` artık `tk_setPalette` ile Tk'nın
-  klasik paletini temaya çevirir — tüm açık pencereler ve bundan sonra
-  açılacak alt pencereler (dialog zeminleri, menüler) seçili temayı
-  izler; pencereye pencere düzeltme gerekmez.
 
 ### Testler
-- `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
-  istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
-  yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
-  Bearer + 401 yenileme.
 - `tests/sertifika_test.py` (yeni, çevrimdışı): PEM/DER çevirisi, AIA
   çözümleme, birleşik CA yazımı (0600), onarım akışı. run_all.sh
   **20/20** geçti.
