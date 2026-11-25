@@ -3266,6 +3266,8 @@ class Postacim(tk.Tk):
         metin.tag_configure("buyuk", font=(YAZI_TIPİ, 24, "bold"))
         metin.tag_configure("soluk", foreground="#777777")
         metin.tag_configure("gun", font=(YAZI_TIPİ, 10, "bold"))
+        metin.tag_configure("kaynak", foreground="#777777",
+                            font=(YAZI_TIPİ, 8))
 
         veri = self._hava_veri
         if not veri:
@@ -3332,7 +3334,7 @@ class Postacim(tk.Tk):
                     ekle(f"   Rüzgâr {hiz_g:g} m/s\n", "soluk", "")
                 ekle("", "", "\n")
         ekle("Kaynak: MGM (meteoroloji.gov.tr) • Konum: Ayarlar ▸ Genel",
-             "soluk", "\n")
+             "kaynak", "\n")
 
         alt = ttk.Frame(pencere)
         alt.pack(fill="x", pady=(0, 8))
