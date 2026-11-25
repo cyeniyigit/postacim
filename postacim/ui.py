@@ -5567,7 +5567,9 @@ class HesapPenceresi(tk.Toplevel):
         self.title("Hesap ekle" if hesap is None else "Hesap düzenle")
         self.transient(ana)
         ana._pencere_simgesi(self)
-        self.geometry("470x560")
+        # 640px: alanların (genişlik 32 karakter + etiketler) doğal
+        # genişliğine yetmeli — dar tutulursa Entry'ler pencere dışına taşar
+        self.geometry("640x560")
         self.resizable(False, False)
 
         self.tur_degisken = tk.StringVar(
@@ -6960,7 +6962,7 @@ class TakvimHesapPenceresi(tk.Toplevel):
         super().__init__(ana)
         self.ana = ana
         self.title("Takvim Hesapları")
-        self.geometry("560x560")
+        self.geometry("560x620")
         self.transient(ana)
         ana._pencere_simgesi(self)
         self.grab_set()
@@ -7035,17 +7037,21 @@ class TakvimHesapPenceresi(tk.Toplevel):
         self.oauth_durum = ttk.Label(self.oauth_cerceve, text="")
         self.oauth_durum.pack(side="left", padx=(8, 0))
 
-        # Hazır şablonlar
+        # Hazır şablonlar (2 sütunlu ızgara — tek satırda 1100px'e
+        # taşarak pencereyi aşmasın)
         sablon_alan = ttk.Frame(form)
         sablon_alan.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        ttk.Label(sablon_alan, text="Hazır:").pack(side="left")
-        for ad in self.SABLONLAR:
+        ttk.Label(sablon_alan, text="Hazır:").grid(
+            row=0, column=0, columnspan=2, sticky="w"
+        )
+        for sira, ad in enumerate(self.SABLONLAR):
             ttk.Button(
-                sablon_alan, text=ad, width=18,
+                sablon_alan, text=ad, width=17,
                 command=lambda a=ad: self._sablon(a),
-            ).pack(side="left", padx=2)
+            ).grid(row=sira // 2 + 1, column=sira % 2,
+                   sticky="w", padx=2, pady=2)
 
-        self.ipucu = ttk.Label(form, text="", wraplength=500, justify="left",
+        self.ipucu = ttk.Label(form, text="", wraplength=460, justify="left",
                                foreground="#5f6368")
         self.ipucu.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 

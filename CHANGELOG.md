@@ -45,6 +45,9 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
 - **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
   kalmıyordu).
+- **Pencere taşmaları:** Hesap penceresi (470→640px) ve Takvim
+  Hesapları penceresinde alanlar/düğmeler pencere dışına taşıyordu;
+  ölçüme dayalı boyutlandırma + şablon düğmelerinin 2 sütunlu ızgarası.
 - **Global tema paleti:** `_stil_uygula` artık `tk_setPalette` ile Tk'nın
   klasik paletini temaya çevirir — tüm açık pencereler ve bundan sonra
   açılacak alt pencereler (dialog zeminleri, menüler) seçili temayı
