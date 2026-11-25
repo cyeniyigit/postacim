@@ -59,6 +59,62 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   sayfalanır, "Klasör" sütunu yalnız global aramada görünür ve
   mesajın hangi klasörden geldiğini gösterir. Tercih hatırlanır.
 
+## [0.1.35] — 2026-11-25
+
+### Eklenen
+- **Google OAuth2 desteği (Gmail posta + takvim):** uygulama parolasına
+  alternatif olarak Google hesabı tarayıcıda tek bir yetkilendirmeyle
+  IMAP/SMTP (XOAUTH2) ve CalDAV (Bearer) erişimi alır.
+  - `postacim/google_oturum.py` (yeni): PKCE + loopback yetkilendirme
+    akışı, token depolama (0600) ve sessiz yenileme. İstemci kimliği
+    (client_secret JSON) bir kez seçilir, `~/.config/postacim/
+    google_istemci.json` altına kopyalanır (depoya girmez).
+  - `imap.py`: `yontem="oauth2"` hesaplarında IMAP `AUTHENTICATE
+    XOAUTH2` ve SMTP `AUTH XOAUTH2`; token süresi dolduğunda
+    otomatik yenilenir ve `hesap.json`'a yazılır.
+  - `caldav.py`: OAuth2 hesaplarında Bearer başlığı; 401'de tek
+    yenileme ile yeniden dener. Google için **yeni** uç
+    (`apidata.googleusercontent.com/caldav/v2/…`) kullanılır
+    (eski uç deprecated).
+  - Hesap penceresi: IMAP'ta "Kimlik" seçimi — Uygulama parolası /
+    Google (OAuth2) + "Google ile yetkilendir…" düğmesi.
+  - Takvim hesapları: "Yöntem" seçimi + **Gmail (OAuth2)** şablonu.
+  - Not: Google Cloud tarafında CalDAV API etkin olmalı; Personal
+    mod istemci tokende 7 günlük süre koymaz.
+
+### Düzeltilen
+- **OAuth2 hesapta açılışta parola sorulması:** arayüzdeki 4 kimlik
+  denetimi parola arıyordu; OAuth2 hesabında parola boş olduğundan
+  açılışta giriş penceresi açılıyordu. `_hesap_kimlik_tam()` yardımcısı
+  eklendi (OAuth2'de refresh token kimlik sayılır). Giriş penceresi
+  OAuth2 hesabında "Google ile yetkilendir…" düğmesi gösterir.
+- **Giriş penceresi zemini temaya uydu** (koyu/mavi temalarda gri
+  kalmıyordu).
+- **Global tema paleti:** `_stil_uygula` artık `tk_setPalette` ile Tk'nın
+  klasik paletini temaya çevirir — tüm açık pencereler ve bundan sonra
+  açılacak alt pencereler (dialog zeminleri, menüler) seçili temayı
+  izler; pencereye pencere düzeltme gerekmez.
+
+### Testler
+- `tests/google_oturum_test.py` (yeni, çevrimdışı): XOAUTH2 dizesi,
+  istemci kimliği 0600 kayıt/okuma, token yenileme, loopback
+  yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
+  Bearer + 401 yenileme. run_all.sh **19/19** geçti.
+
+## [0.1.37] — 2026-11-25
+
+### Eklenen
+- **Takip (bayrak) işareti:** sağ tuş → "Takip" (Bugün / Yarın /
+  1 hafta / Bayrağı kaldır; çoklu seçim çalışır). Listede takipli
+  mesajlar konu önünde ⚑ gösterir. IMAP'ta \Flagged (Gmail'de
+  yıldız), EWS'te item:Flag ile yazar; takip son tarihi sunucuda
+  saklanır (EWS) / istemci alanıdır (IMAP).
+- **Global arama:** arama çubuğuna "Bu klasör / Tüm klasörler" kapsam
+  seçimi; aktif hesabın tüm klasörleri tek sonuçta (IMAP'ta klasör
+  başına sunucu SEARCH, EWS'te istemci filtresi). Sonuçlar önbellekten
+  sayfalanır, "Klasör" sütunu yalnız global aramada görünür ve
+  mesajın hangi klasörden geldiğini gösterir. Tercih hatırlanır.
+
 ## [0.1.36] — 2026-11-25
 
 ### Eklenen
