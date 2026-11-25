@@ -1040,6 +1040,29 @@ class ImapIstemci:
         self._ondan_sil(uid)
 
     @_kilitli
+    def bayrakla(
+        self, mesaj: Mesaj, bayrak: bool = True, son_tarih: str = ""
+    ) -> None:
+        """Takip işaretini yazar (IMAP \\Flagged; Gmail'de yıldız).
+
+        `son_tarih` IMAP'ta sunucuda saklanmaz (bir istemci alanıdır);
+        yalnız onbellekteki nesneye yazılır. Başarıda onbellek tazelenir.
+        """
+        uid = int(mesaj.item_id)
+        klasor = mesaj.klasor or "inbox"
+        self._sec(self._klasor_adi(klasor))
+        yon = "+FLAGS" if bayrak else "-FLAGS"
+        tip, _ = self._komut(
+            "uid", "store", str(uid), yon, "(\\Flagged)"
+        )
+        if tip != "OK":
+            raise EwsHata("Takip işareti yazılamadı.")
+        mesaj.bayrak = bayrak
+        for kayit in self._onbellek.values():
+            if uid in kayit.get("mesajlar", {}):
+                kayit["mesajlar"][uid].bayrak = bayrak
+
+    @_kilitli
     def kalici_sil(self, mesaj: Mesaj) -> None:
         """Mesajı kalıcı olarak siler (\\Deleted + EXPUNGE)."""
         uid = int(mesaj.item_id)
@@ -1306,6 +1329,7 @@ def _zarf_mesaji(icerik: bytes, uid: int, klasor: str, bayraklar: str) -> Mesaj:
         klasor=klasor,
         tariham=tariham,
         ek_var=ek_var,
+        bayrak="\\Flagged" in (bayraklar or ""),
     )
 
 

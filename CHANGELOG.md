@@ -48,6 +48,11 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 ## [0.1.37] — 2026-11-25
 
 ### Eklenen
+- **Takip (bayrak) işareti:** sağ tuş → "Takip" (Bugün / Yarın /
+  1 hafta / Bayrağı kaldır; çoklu seçim çalışır). Listede takipli
+  mesajlar konu önünde ⚑ gösterir. IMAP'ta \Flagged (Gmail'de
+  yıldız), EWS'te item:Flag ile yazar; takip son tarihi sunucuda
+  saklanır (EWS) / istemci alanıdır (IMAP).
 - **Global arama:** arama çubuğuna "Bu klasör / Tüm klasörler" kapsam
   seçimi; aktif hesabın tüm klasörleri tek sonuçta (IMAP'ta klasör
   başına sunucu SEARCH, EWS'te istemci filtresi). Sonuçlar önbellekten

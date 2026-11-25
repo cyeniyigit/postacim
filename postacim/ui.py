@@ -3061,6 +3061,14 @@ class Postacim(tk.Tk):
             self._okundu_goster(veri[1])
         elif tur == "okundu_hata":
             self.durum.set("Okundu bilgisi sunucuya yazılamadı (EWS UpdateItem hatası)")
+        elif tur == "takip":
+            # Onbellek güncellendi; listeyi önbellekten tazele (bayrağı ⚑)
+            self.durum.set(veri[2])
+            if self._global_sonuc is not None:
+                for m in self._global_sonuc:
+                    if m.item_id == self.secili.item_id:
+                        m.bayrak = self.secili.bayrak
+            self._mesajlari_cek_ile(tazele=False)
         elif tur == "uyari":
             messagebox.showinfo("Bilgi", veri[1])
 
@@ -4183,6 +4191,8 @@ class Postacim(tk.Tk):
         geri_yukle = []
         for i, m in enumerate(mesajlar):
             konu = ("📎 " if m.ek_var else "") + m.konu
+            if getattr(m, "bayrak", False):
+                konu = "⚑ " + konu  # takip işaretli
             self.liste.insert(
                 "",
                 "end",
@@ -4739,6 +4749,52 @@ class Postacim(tk.Tk):
             # Kurumda EWS UpdateItem calismiyor; sessizce gec.
             return ("okundu_hata", None)
 
+    def _takip_iaretle_kuyruk(self, secili: list, secim: str):
+        """Arka plan: seçili mesaj(lar)a takip işareti yazar.
+
+        secim: 'bugün' | 'yarın' | '1 hafta' | '' (kaldır).
+        `secili` ANA iş parçacığında alınır (Tk'ye dokunulmaz).
+        Döndürük ("takip", adet, yazi) — _sonuc_isle listeyi tazeler.
+        """
+        from datetime import date, timedelta
+
+        son_tarih = ""
+        bugun = date.today()
+        if secim == "bugün":
+            son_tarih = bugun.isoformat()
+        elif secim == "yarın":
+            son_tarih = (bugun + timedelta(days=1)).isoformat()
+        elif secim == "1 hafta":
+            son_tarih = (bugun + timedelta(days=7)).isoformat()
+        bayrak = bool(secim)
+        adet = 0
+        hata = ""
+        for mesaj in secili:
+            try:
+                self.istemci.bayrakla(mesaj, bayrak, son_tarih)
+                adet += 1
+            except EwsHata as exc:
+                hata = str(exc)
+        if hata and not adet:
+            return ("hata", hata)
+        if bayrak:
+            yazi = f"{adet} mesaja takip işareti eklendi"
+            if son_tarih:
+                yazi += f" (son: {son_tarih})"
+        else:
+            yazi = f"{adet} mesajın takip işareti kaldırıldı"
+        return ("takip", adet, yazi)
+
+    def takip_iaretle(self, secim: str):
+        secili = self._secili_mesajlar()  # Tk çağrısı: yalnız ana iş parçacığı
+        if not secili:
+            return
+        self.durum.set("Takip işareti yazılıyor…")
+        threading.Thread(
+            target=self._arka_plan,
+            args=(self._takip_iaretle_kuyruk, secili, secim), daemon=True,
+        ).start()
+
     def bir_okundu(self, deger: bool = True):
         if not self.secili:
             return
@@ -4945,6 +5001,23 @@ class Postacim(tk.Tk):
         menu.add_command(
             label="Okunmadı yap", image=self.ikon["okunmadi"],
             compound="left", command=lambda: self.bir_okundu(False),
+        )
+        # Takip (bayrak): Bugün / Yarın / 1 hafta / Kaldır
+        takip = tk.Menu(menu, tearoff=0)
+        takip.add_command(
+            label="Bugün", command=lambda: self.takip_iaretle("bugün"),
+        )
+        takip.add_command(
+            label="Yarın", command=lambda: self.takip_iaretle("yarın"),
+        )
+        takip.add_command(
+            label="1 hafta", command=lambda: self.takip_iaretle("1 hafta"),
+        )
+        takip.add_command(
+            label="Bayrağı kaldır", command=lambda: self.takip_iaretle(""),
+        )
+        menu.add_cascade(
+            label="Takip", image=self.ikon["oku"], compound="left", menu=takip,
         )
         menu.add_separator()
         tasi = tk.Menu(menu, tearoff=0)

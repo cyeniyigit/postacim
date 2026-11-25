@@ -9,6 +9,7 @@
 
 import json
 import os
+os.environ["POSTACIM_GUNCELLEME"] = "0"
 import sys
 import tempfile
 import unittest

@@ -127,6 +127,7 @@ class Mesaj:
     klasor: str = ""
     tariham: str = ""
     ek_var: bool = False
+    bayrak: bool = False   # takip işareti (EWS Flag / IMAP \Flagged)
     alici: str = ""
     bilgi: str = ""
 
@@ -530,6 +531,7 @@ class EwsIstemci:
         self._takvim_onbellek: dict | None = None  # {"durum", "randevular", "tam"}
         self._mime_onbellek: dict[str, bytes] = {}
         self._getattachment_calismiyor = False
+        self._flag_destekli = True  # item:Flag zincirde okunuyor mu (oturum içi)
         # Kullanıcı klasörleri (FindFolder): 60 sn önbellek — her yenilemede
         # ek istek atılmasın; klasor_olustur önbelleği düşürür.
         self._ozel_klasor_onbellek: list = None
@@ -992,6 +994,52 @@ class EwsIstemci:
         sayfa = mesajlar[offset : offset + sayfa_boyutu]
         return sayfa, toplam
 
+    def bayrakla(
+        self, mesaj: Mesaj, bayrak: bool = True, son_tarih: str = ""
+    ) -> None:
+        """Takip işaretini yazar (EWS item:Flag, UpdateItem).
+
+        `son_tarih` 'YYYY-MM-DD' verilirse `DueDate` yazılır (Basit
+        bayrak seçimleri: bugün/yarın/1 hafta). Başarıda onbellekteki
+        mesaj nesnesi güncellenir.
+        """
+        if not mesaj.item_id:
+            raise EwsHata("Mesaj kimliği yok — bayrak yazılamadı.")
+        durum = "Flagged" if bayrak else "NotFlagged"
+        tarih_xml = ""
+        if bayrak and son_tarih:
+            tarih_xml = (
+                f"<t:StartDate>{son_tarih}T00:00:00Z</t:StartDate>"
+                f"<t:DueDate>{son_tarih}T00:00:00Z</t:DueDate>"
+            )
+        govde = (
+            '<m:UpdateItem MessageDisposition="SaveOnly"'
+            ' ConflictResolution="AlwaysOverwrite">'
+            "<m:ItemChanges><t:ItemChange>"
+            f'<t:ItemId Id="{mesaj.item_id}" ChangeKey="{mesaj.change_key}"/>'
+            "<t:Updates><t:SetItemField>"
+            "<t:FieldURI FieldURI=\"item:Flag\"/>"
+            f"<t:Message><t:Flag><t:FlagStatus>{durum}</t:FlagStatus>"
+            f"{tarih_xml}</t:Flag></t:Message>"
+            "</t:SetItemField></t:Updates>"
+            "</t:ItemChange></m:ItemChanges>"
+            "</m:UpdateItem>"
+        )
+        kok = self.istek(govde)
+        if kok.find(".//m:UpdateItemResponseMessage[@ResponseClass='Error']",
+                    NS) is not None:
+            aciklama = kok.findtext(
+                ".//m:MessageText", "sunucu hatası", NS)
+            raise EwsHata(f"Bayrak yazılamadı: {aciklama}")
+        # Yeni ChangeKey (varsa) saklanır; onbellek tazelenir
+        yeni = kok.find(".//t:ItemId", NS)
+        if yeni is not None and yeni.get("ChangeKey"):
+            mesaj.change_key = yeni.get("ChangeKey")
+        mesaj.bayrak = bayrak
+        for kayit in self._senkronizasyon.values():
+            if mesaj.item_id in kayit.get("mesajlar", {}):
+                kayit["mesajlar"][mesaj.item_id].bayrak = bayrak
+
     def global_arama(
         self, arama: str, alan: str = "konu", en_fazla: int = 500
     ) -> list:
@@ -1090,15 +1138,40 @@ class EwsIstemci:
         tur = 0
         while not kayit["tam"] and tur < 200:
             tur += 1
+            # Takip işareti (item:Flag) zincirde okunacaksa eklenir;
+            # bazı sunucular ek alanı reddedebilir → uyumluluk yoluyla
+            # bayraksız devam edilir (tek kez dener).
+            if self._flag_destekli:
+                sekil = (
+                    "<m:ItemShape><t:BaseShape>Default</t:BaseShape>"
+                    "<t:AdditionalProperties>"
+                    "<t:FieldURI FieldURI=\"item:Flag\"/>"
+                    "</t:AdditionalProperties></m:ItemShape>"
+                )
+            else:
+                sekil = "<m:ItemShape><t:BaseShape>Default</t:BaseShape></m:ItemShape>"
             govde = (
                 "<m:SyncFolderItems>"
-                "<m:ItemShape><t:BaseShape>Default</t:BaseShape></m:ItemShape>"
+                f"{sekil}"
                 f"<m:SyncFolderId>{_klasor_id_xml(klasor)}</m:SyncFolderId>"
                 f"<m:SyncState>{kayit['durum']}</m:SyncState>"
                 "<m:Ignore/><m:MaxChangesReturned>512</m:MaxChangesReturned>"
                 "</m:SyncFolderItems>"
             )
-            kok = self.istek(govde)
+            try:
+                kok = self.istek(govde)
+            except EwsHata as exc:
+                if self._flag_destekli and tur == 1 and \
+                        ("invalid" in str(exc).lower()
+                         or "error" in str(exc).lower()):
+                    # Sunucu item:Flag'i reddetti: bu oturumda bayraksız
+                    self._flag_destekli = False
+                    kayit["durum"] = ""
+                    kayit["mesajlar"] = {}
+                    kayit["tam"] = False
+                    tur = 0
+                    continue
+                raise
             durum_el = kok.find(".//m:SyncState", NS)
             if durum_el is not None and durum_el.text:
                 kayit["durum"] = durum_el.text
@@ -1156,6 +1229,7 @@ class EwsIstemci:
             klasor=klasor,
             tariham=(tarih.text or "") if tarih is not None else "",
             ek_var=(ek_var.text == "true") if ek_var is not None else False,
+            bayrak=el.find("t:Flag", NS) is not None,
         )
 
     def mesaj_detay(self, mesaj: Mesaj) -> Mesaj:
