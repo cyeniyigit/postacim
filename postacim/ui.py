@@ -444,6 +444,25 @@ MAVI_TEMA_AYARLARI = {
 }
 
 
+KLASOR_GORUNUM_ADLARI = {
+    "inbox": "Gelen Kutusu",
+    "sentitems": "Gönderilmiş",
+    "drafts": "Taslaklar",
+    "deleteditems": "Silinmiş Öğeler",
+    "junkemail": "Önemsiz",
+    "archive": "Arşiv",
+    "outbox": "Giden Kutusu",
+}
+
+
+def _guzel_klasor_adi(kimlik: str) -> str:
+    """Klasör kimliğini görünen adıya çevirir (global arama sütunu)."""
+    kimlik = (kimlik or "").strip()
+    if not kimlik:
+        return ""
+    return KLASOR_GORUNUM_ADLARI.get(kimlik.lower(), kimlik)
+
+
 class Postacim(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -528,6 +547,7 @@ class Postacim(tk.Tk):
         self._otomatik_bekliyor = False  # otomatik yenileme sonucu dönmediyse yeni tik atlanır
         self._is_sayaci = 0  # sonuçları henüz işlenmemiş arka plan işi sayısı
         self._secim_olayi_yut = 0  # yenilemeden gelen yapay seçim olayları
+        self._global_sonuc = None  # global arama önbelleği ([Mesaj] sayfalamalı)
         # Kullanıcı mesaj listesinde fare düğmesini basılı tutarken listeyi
         # yeniden kurmayız (delete+insert, Tcl seçim sürüklemesiyle
         # çakışıp çökmeye yol açabilir); sonuç düğme kalkınca uygulanır.
@@ -913,6 +933,19 @@ class Postacim(tk.Tk):
         giriş = ttk.Entry(cubuk, textvariable=self.arama, width=32)
         giriş.pack(side="left", padx=6)
         giriş.bind("<Return>", lambda e: self._arama_yap())
+        # Arama kapsamı: bu klasör | tüm klasörler (tercih hatırlanır;
+        # kayıtta kod, combobox'ta etiket gösterilir)
+        kayitli = self.ayarlar.al("arama_kapsam", "klasor")
+        self.arama_kapsam_degisken = tk.StringVar(
+            value="Tüm klasörler" if kayitli == "tum" else "Bu klasör"
+        )
+        ttk.Combobox(
+            cubuk, textvariable=self.arama_kapsam_degisken, state="readonly",
+            values=("Bu klasör", "Tüm klasörler"), width=13,
+        ).pack(side="left", padx=(0, 4))
+        self.arama_kapsam_degisken.trace_add(
+            "write", lambda *_: self._arama_kapsam_degisti()
+        )
         ttk.Button(
             cubuk, text="Ara", image=self.ikon["ara"], compound="left",
             command=self._arama_yap,
@@ -988,7 +1021,7 @@ class Postacim(tk.Tk):
 
         self.liste = ttk.Treeview(
             liste_ala,
-            columns=("durum", "gonderen", "konu", "tarih"),
+            columns=("durum", "gonderen", "konu", "tarih", "klasor"),
             show="headings",
             selectmode="extended",  # Ctrl (tek tek) + Shift (aralık) çoklu seçim
         )
@@ -996,6 +1029,7 @@ class Postacim(tk.Tk):
         self.liste.heading("gonderen", text="Gönderen")
         self.liste.heading("konu", text="Konu")
         self.liste.heading("tarih", text="Tarih")
+        self.liste.heading("klasor", text="Klasör")
         # Sutun toplami panonun genisliginden kucuk tutulur; fazlasini
         # gonderen/konu sutunlari esner. (Buyuk tutulursa Treeview kendi
         # dogal genisligine yapisir ve kaydirici 1 piksele sikisir.)
@@ -1004,6 +1038,12 @@ class Postacim(tk.Tk):
         self.liste.column("gonderen", width=130)
         self.liste.column("konu", width=170)
         self.liste.column("tarih", width=140, stretch=False)
+        self.liste.column("klasor", width=100, stretch=False)
+        # "Klasör" sütunu yalnız global aramada gösterilir
+        # (displaycolumns ile dinamik; normal görünümde gizli)
+        self.liste.configure(
+            displaycolumns=("durum", "gonderen", "konu", "tarih")
+        )
         kaydirma = ttk.Scrollbar(liste_ala, orient="vertical", command=self.liste.yview)
         self.liste.configure(yscrollcommand=kaydirma.set)
         # Kaydirici once paketlenir ki yerini kesin alsin.
@@ -2929,6 +2969,20 @@ class Postacim(tk.Tk):
             self._hesap_klasorlerine_yaz(veri[1], veri[2])
         elif tur == "mesajlar":
             self._mesajlari_doldur(veri[1], veri[2])
+        elif tur == "global_arama":
+            sonuc = veri[1]
+            self._global_sonuc = list(sonuc)
+            if not sonuc:
+                self.durum.set("Tüm klasörlerde eşleşme yok.")
+                self._mesajlari_doldur([], 0)
+                return
+            self.durum.set(
+                f"Tüm klasörlerde {len(sonuc)} eşleşme — sayfalama önbellekten."
+            )
+            self.sayfa_no = 0
+            self._mesajlari_doldur(
+                sonuc[: self.sayfa_boyutu], len(sonuc)
+            )
         elif tur == "gonder_al":
             klasorler, yeni, mesajlar, toplam = veri[1], veri[2], veri[3], veri[4]
             diger = veri[5] if len(veri) > 5 else {}
@@ -4012,6 +4066,21 @@ class Postacim(tk.Tk):
         self.sayfa_no = 0
         self._mesajlari_cek_ile()
 
+    def _arama_kapsam_degisti(self):
+        """Kapsam değişince: tercih kaydet + global önbelleği bırak."""
+        kapsam = self._arama_kapsami()
+        self.ayarlar.ayarla("arama_kapsam", kapsam)
+        self.ayarlar.kaydet()
+        self._global_sonuc = None
+        if (self.arama.get() or "").strip():
+            self._arama_yap()
+
+    def _arama_kapsami(self) -> str:
+        """'klasor' | 'tum' — combobox etiketinden."""
+        return (
+            "tum" if "Tüm" in (self.arama_kapsam_degisken.get() or "") else "klasor"
+        )
+
     def _mesajlari_cek_ile(self, tazele: bool = True):
         """Mesaj listesini arka planda yeniler.
 
@@ -4025,6 +4094,23 @@ class Postacim(tk.Tk):
         alan = "gonderen" if arama.lower().startswith("from:") else "konu"
         if alan == "gonderen":
             arama = arama[5:].strip()
+        # Global arama: tüm klasörler tek sonuç kümesine toplanır
+        if arama and self._arama_kapsami() == "tum":
+            if not tazele and self._global_sonuc is not None:
+                # Sayfalama: önbellekteki listeden dilimle
+                toplam = len(self._global_sonuc)
+                bas = self.sayfa_no * self.sayfa_boyutu
+                return self._mesajlari_doldur(
+                    self._global_sonuc[bas : bas + self.sayfa_boyutu], toplam
+                )
+            self.durum.set("Tüm klasörler aranıyor…")
+            threading.Thread(
+                target=self._arka_plan,
+                args=(self._global_arama_cek, arama, alan),
+                daemon=True,
+            ).start()
+            return
+        self._global_sonuc = None
         klasor = self.klasor
         offset = self.sayfa_no * self.sayfa_boyutu
         sayfa_boyutu = self.sayfa_boyutu
@@ -4036,6 +4122,10 @@ class Postacim(tk.Tk):
             args=(self._mesajlari_cek, klasor, sayfa_boyutu, offset, arama, alan, tam, tazele),
             daemon=True,
         ).start()
+
+    def _global_arama_cek(self, arama, alan):
+        sonuc = self.istemci.global_arama(arama, alan)
+        return ("global_arama", sonuc)
 
     def _mesajlari_cek(self, klasor, sayfa_boyutu, offset, arama, alan, tam, tazele=True):
         mesajlar, toplam = self.istemci.mesajlar(
@@ -4072,6 +4162,19 @@ class Postacim(tk.Tk):
                 secili_kimlikler.add(self.mesajlar[i].item_id)
         kaydirma = self.liste.yview()[0] if self.liste.get_children() else 0.0
 
+        # Global arama modunda "Klasör" sütunu görünür (mesajın hangi
+        # klasörden geldiği anlaşılsın); normal görünümde gizli.
+        global_mi = self._global_sonuc is not None and bool(
+            (self.arama.get() or "").strip()
+        )
+        if global_mi:
+            self.liste.configure(
+                displaycolumns=("durum", "gonderen", "konu", "tarih", "klasor")
+            )
+        else:
+            self.liste.configure(
+                displaycolumns=("durum", "gonderen", "konu", "tarih")
+            )
         # Yapay seçim olayları yutulur: delete (seçim düşerse) + selection_set.
         # Böylece yenileme detay yeniden çekmez, durum çubuğu bozulmaz.
         self._secim_olayi_yut += 1 if secili_kimlikler else 0
@@ -4084,7 +4187,13 @@ class Postacim(tk.Tk):
                 "",
                 "end",
                 iid=str(i),
-                values=("●" if not m.okundu else "", m.gonderen_ad or m.gonderen, konu, m.tarih),
+                values=(
+                    "●" if not m.okundu else "",
+                    m.gonderen_ad or m.gonderen,
+                    konu,
+                    m.tarih,
+                    _guzel_klasor_adi(m.klasor),
+                ),
             )
             if m.item_id in secili_kimlikler:
                 geri_yukle.append(str(i))

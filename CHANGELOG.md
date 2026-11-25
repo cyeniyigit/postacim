@@ -45,6 +45,15 @@ ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
   yetkilendirme akışı (sahte tarayıcı), IMAP/SMTP girişi, CalDAV
   Bearer + 401 yenileme. run_all.sh **19/19** geçti.
 
+## [0.1.37] — 2026-11-25
+
+### Eklenen
+- **Global arama:** arama çubuğuna "Bu klasör / Tüm klasörler" kapsam
+  seçimi; aktif hesabın tüm klasörleri tek sonuçta (IMAP'ta klasör
+  başına sunucu SEARCH, EWS'te istemci filtresi). Sonuçlar önbellekten
+  sayfalanır, "Klasör" sütunu yalnız global aramada görünür ve
+  mesajın hangi klasörden geldiğini gösterir. Tercih hatırlanır.
+
 ## [0.1.36] — 2026-11-25
 
 ### Eklenen

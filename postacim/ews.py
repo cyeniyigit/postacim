@@ -992,6 +992,49 @@ class EwsIstemci:
         sayfa = mesajlar[offset : offset + sayfa_boyutu]
         return sayfa, toplam
 
+    def global_arama(
+        self, arama: str, alan: str = "konu", en_fazla: int = 500
+    ) -> list:
+        """Aktif hesabın **tüm klasörlerinde** arar; [Mesaj] döndürür.
+
+        Sunucu `FindItem` bozuk olduğu için (Exchange 2013) arama
+        istemci tarafında yürür: her klasör `SyncFolderItems` ile
+        onbelleğe alınır, eşleşenler toplanıp en yeniden eskiye
+        sıralanır (en_fazla ile sınırlı). Klasör bilgisi
+        `Mesaj.klasor` alanında taşınır.
+        """
+        arama = (arama or "").strip().lower()
+        if not arama:
+            return []
+        try:
+            kimlikler = [k.kimlik for k in self.klasor_listesi()]
+        except (EwsHata, requests.RequestException):
+            kimlikler = list(self._senkronizasyon)
+        sonuc: list = []
+        for kimlik in kimlikler:
+            try:
+                self._senkronize(kimlik)
+            except (EwsHata, requests.RequestException):
+                continue  # bir klasör hataları diğerini bozmasın
+            kayit = self._senkronizasyon.get(kimlik, {})
+            mesajlar = list(kayit.get("sirali", []))
+            if alan == "gonderen":
+                mesajlar = [
+                    m for m in mesajlar
+                    if arama in (m.gonderen or "").lower()
+                    or arama in (m.gonderen_ad or "").lower()
+                ]
+            else:
+                mesajlar = [
+                    m for m in mesajlar
+                    if arama in (m.konu or "").lower()
+                    or arama in (m.onizleme or "").lower()
+                    or arama in (m.gonderen_ad or m.gonderen or "").lower()
+                ]
+            sonuc.extend(mesajlar)
+        sonuc.sort(key=lambda m: m.tariham or "", reverse=True)
+        return sonuc[:en_fazla]
+
     def gelen_sayisi(self) -> int:
         """Gelen Kutusu'ndaki toplam mesaj sayısı (tek GetFolder isteği)."""
         govde = (

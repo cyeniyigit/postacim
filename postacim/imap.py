@@ -558,6 +558,35 @@ class ImapIstemci:
         return sayfa, toplam
 
     @_kilitli
+    def global_arama(
+        self, arama: str, alan: str = "konu", en_fazla: int = 500
+    ) -> list:
+        """Aktif hesabın **tüm klasörlerinde** arar; [Mesaj] döndürür.
+
+        Klasör başına **sunucu tarafı** `SEARCH` (FROM/TEXT) kullanılır;
+        eşleşen zarflar onbelleğe alınır, sonuçlar en yeniden eskiye
+        sıralanır (en_fazla ile sınırlı). `Mesaj.klasor` doldurulur.
+        """
+        arama = (arama or "").strip()
+        if not arama:
+            return []
+        try:
+            kimlikler = [k.kimlik for k in self.klasor_listesi()]
+        except (EwsHata, requests.RequestException):
+            kimlikler = list(self._onbellek)
+        sonuc: list = []
+        for kimlik in kimlikler:
+            try:
+                self._arama_yap(kimlik, arama, alan)
+                sonuc.extend(
+                    self._onbellek.get(kimlik, {}).get("sirali_arama", [])
+                )
+            except (EwsHata, requests.RequestException):
+                continue  # bir klasör hataları diğerini bozmasın
+        sonuc.sort(key=lambda m: m.tariham or "", reverse=True)
+        return sonuc[:en_fazla]
+
+    @_kilitli
     def gelen_sayisi(self) -> int:
         """Gelen Kutusu'ndaki toplam mesaj sayısı (tek STATUS isteği)."""
         self._baglan()
