@@ -2136,3 +2136,18 @@ yayınlamalı (v0.1.35 tag'i zaten 5da1614'te yayımlanmıştı).
 → DÜZELTME: simdi = datetime.now().astimezone() + bilinçsiz damga
   gelen kayda yerel dilim atanır. Z'li + ofsetli damga vakaları
   test'e eklendi (hatirlatici_test 8 denetim) — run_all.sh 45/45.
+
+### EK (2026-11-26) — Hafta görünümünde erken satır kırılması (~/poz.png)
+→ HATA: _hafta_ciz etiketi sabit wraplength=90 piksel — sütun
+  genişliği ölçülmüyordu; geniş harfli başlıklar ("Gökhan da Beyin")
+  erken iki satıra bölünüyor, dar harfliler ("İstanbul Ziyaret")
+  tek satırda kalıyordu (tutarsız görünüm).
+→ DÜZELTME: etiket <Configure> ile kendi gerçek genişliğini ölçüp
+  wraplength'i (genişlik-4) günceller; pencere daralırsa yine sarar.
+  tests/hafta_sarma_test.py (Xvfb: genişlik >90 + tek satır
+  doğrulaması) — run_all.sh 46/46.
+→ EK DÜZELTME (kurulum): pip'in build/lib'deki BAYAT çıktıyı yeniden
+  kullanması yüzünden kurulu kopyaya eski kod kuruluyordu (hatırlatıcı
+  çökmesi düzeltilmişken bile hata devam etti — ~/hata.png);
+  kur.sh'a kurulum öncesi `rm -rf build/ *.egg-info` eklendi,
+  kurulu kopya temiz kurulumla tazelendi.

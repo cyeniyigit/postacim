@@ -2230,9 +2230,17 @@ class Postacim(tk.Tk):
                 hucre, text=r.baslik[:22], anchor="w", justify="left",
                 bg=r_arka, fg=r_on,
                 font=self._cizili_font(r_font) if r.tamamlandi else r_font,
-                padx=2, wraplength=90,
+                padx=2,
             )
             et.pack(fill="both", expand=True, padx=1, pady=1)
+            # Satır kırımı sütunun gerçek genişliğine göre (sabit piksel
+            # değil): geniş harfli başlıklar erken kırılmaz, daralınca
+            # yine sarar.
+            et.bind(
+                "<Configure>",
+                lambda _e, etiket=et: etiket.configure(
+                    wraplength=max(40, etiket.winfo_width() - 4)),
+            )
             et.bind("<Button-1>", lambda e, rr=r: self._randevu_goster(rr))
             et.bind("<Double-Button-1>", lambda e, rr=r: self._randevu_penceresi(randevu=rr))
             et.bind("<Button-3>", lambda e, rr=r: self._randevu_menusu(e, rr))
