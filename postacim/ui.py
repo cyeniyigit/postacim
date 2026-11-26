@@ -544,6 +544,11 @@ class Postacim(tk.Tk):
         self._bildirim_zamanlayici = None
         self._bildirim_bekliyor = False
         self._bildirim_aralik = 60  # saniye
+        # Randevu hatırlatıcısı: bildirilen olaylar {kimlik|baslangic: ISO}
+        self._hatirlatilan: dict[str, str] = {}
+        # Gelen kutusu kuralları: hesap_id → görülen ileti kimlikleri
+        # (None = taban çizgisi henüz alınmadı)
+        self._kural_tabani: dict[str, set | None] = {}
         self._otomatik_bekliyor = False  # otomatik yenileme sonucu dönmediyse yeni tik atlanır
         self._is_sayaci = 0  # sonuçları henüz işlenmemiş arka plan işi sayısı
         self._secim_olayi_yut = 0  # yenilemeden gelen yapay seçim olayları
@@ -3090,10 +3095,13 @@ class Postacim(tk.Tk):
         elif tur == "gonder_al":
             klasorler, yeni, mesajlar, toplam = veri[1], veri[2], veri[3], veri[4]
             diger = veri[5] if len(veri) > 5 else {}
+            tasinan = veri[6] if len(veri) > 6 else None
             self._klasorleri_doldur(klasorler, mesajlari_yukle=False)
             self._mesajlari_doldur(mesajlar, toplam)
             net = sum(yeni.values())
             not_ = f"{net} yeni mesaj" if net > 0 else "yeni mesaj yok"
+            if tasinan:
+                not_ += f" • {len(tasinan)} ileti kural gereği taşındı"
             self.durum.set(f"Gönder/Al tamamlandı — {not_} • " + self.durum.get())
             self._bildirimleri_denle(diger)
 
@@ -3103,7 +3111,8 @@ class Postacim(tk.Tk):
             self._bildirimleri_denle(diger, aktif_sayi)
         elif tur == "otomatik":
             self._otomatik_isle(veri[1], veri[2], veri[3],
-                               veri[4] if len(veri) > 4 else {})
+                                veri[4] if len(veri) > 4 else {},
+                                veri[5] if len(veri) > 5 else None)
         elif tur == "detay":
             self._detay_goster(veri[1])
         elif tur == "takvim":
@@ -3252,6 +3261,8 @@ class Postacim(tk.Tk):
         self.after(1500, self._diger_hesaplari_yukle)
         # Yeni mail bildirimi (otomatik yenilemeden bağımsız)
         self.after(2500, self._bildirim_baslat)
+        # Randevu hatırlatıcısı (takvim yüklense de yüklenmese de döner)
+        self.after(15000, self._hatirlatici_dongusu)
         self._otomatik_baslat()
         # Hava durumu göstergesi (MGM): açılışta bir kez, sonra 30 dk'da bir
         self.after(1500, self._hava_yenile)
@@ -3583,6 +3594,11 @@ class Postacim(tk.Tk):
     def _gonder_al_cek(self, klasor, sayfa_boyutu, offset, arama, alan):
         klasorler = self.istemci.klasor_listesi()
         yeni = self.istemci.guncelle()
+        # Kurallar: gelen kutusuna düşen yeni iletiler otomatik taşınır
+        try:
+            tasinan = self._kurallari_uygula()
+        except (EwsHata, requests.RequestException):
+            tasinan = None
         mesajlar, toplam = self.istemci.mesajlar(
             klasor=klasor,
             sayfa_boyutu=sayfa_boyutu,
@@ -3592,7 +3608,7 @@ class Postacim(tk.Tk):
             tazele=False,
         )
         diger = self._diger_hesap_gelen_sayilari()
-        return ("gonder_al", klasorler, yeni, mesajlar, toplam)
+        return ("gonder_al", klasorler, yeni, mesajlar, toplam, diger, tasinan)
 
     # ------------------------------------------------------- otomatik yenileme
 
@@ -3628,6 +3644,114 @@ class Postacim(tk.Tk):
         self._otomatik_baslat()  # sıradaki tik
 
     # ------------------------------------------------- yeni mail bildirimi
+
+    def _hatirlatici_dongusu(self):
+        """Randevu hatırlatıcı döngüsü (30 sn'de bir; takvimden bağımsız)."""
+        try:
+            self._hatirlaticlari_denle()
+        finally:
+            try:
+                self.after(30000, self._hatirlatici_dongusu)
+            except tk.TclError:
+                pass  # pencere kapandı
+
+    def _hatirlaticlari_denle(self):
+        """Yaklaşan randevuları masaüstü bildirimiyle hatırlatır.
+
+        Süre Ayarlar ▸ Genel'deki `hatirlatici_dakika` tercihi (0 =
+        kapalı). Tamamlanmış ya da başlamış randevular uyarılmaz; bir
+        randevu için yalnız kez uyarılır (oturum içinde).
+        """
+        try:
+            dakika = int(self.ayarlar.al("hatirlatici_dakika", 10) or 0)
+        except (TypeError, ValueError):
+            dakika = 10
+        if dakika <= 0 or not self.takvim_yuklendi:
+            return
+        # Bilinçli (aware) zaman: Z'li/ofsetli damgalarla karşılaşabilmek
+        # için (naive ↔ aware karşılaştırma TypeError atar)
+        simdi = datetime.now().astimezone()
+        son = simdi + timedelta(minutes=dakika)
+        for r in list(self.randevular) + list(self._genis_randevular):
+            bas = iso_yerel(r.baslangic)
+            if bas is None:
+                continue
+            if bas.tzinfo is None:
+                bas = bas.astimezone()  # bilinçsizse yerel dilim varsay
+            if bas <= simdi or bas > son:
+                continue
+            if r.tamamlandi:
+                continue
+            anahtar = f"{r.kimlik}|{r.baslangic}"
+            if anahtar in self._hatirlatilan:
+                continue
+            if len(self._hatirlatilan) > 400:
+                self._hatirlatilan.clear()
+            self._hatirlatilan[anahtar] = r.baslangic
+            kalan = int((bas - simdi).total_seconds() // 60) + 1
+            self._bildirim_gonder(
+                "Randevu hatırlatıcısı",
+                f"{bas.strftime('%H:%M')} — {r.baslik} "
+                f"(~{kalan} dakika sonra)",
+            )
+            self.durum.set(f"Hatırlatıcı: {bas.strftime('%H:%M')} — {r.baslik}")
+
+    # ------------------------------------------------- gelen kutusu kuralları
+
+    def _gelen_tam_mi(self, istemci) -> bool:
+        """Gelen kutusu önbelleği tamamen çekildi mi? (EWS/IMAP ortak)"""
+        kayit = (
+            getattr(istemci, "_senkronizasyon", {}).get("inbox")
+            or getattr(istemci, "_onbellek", {}).get("inbox")
+            or {}
+        )
+        return bool(kayit.get("tam"))
+
+    def _kurallari_uygula(self):
+        """Gelen kutusuna düşen YENİ iletilere kuralları uygular.
+
+        Yalnız aktif hesap için çalışır; taban çizgisi ilk tam çekilişte
+        alınır (kurallar sonradan eklenince eski postalar topluca
+        taşınmaz). Döndürük: [(konu, hedef_ad)] ya da None (kural yok /
+        hazır değil).
+        """
+        tumu = self.ayarlar.al("posta_kurallari", []) or []
+        kurallar = [
+            k for k in tumu
+            if (k.get("desen") or "").strip() and (k.get("klasor") or "")
+            and (k.get("hesap") or "") == self.aktif_id
+        ]
+        if not kurallar:
+            return None
+        gelen, _toplam = self.istemci.mesajlar(
+            klasor="inbox", sayfa_boyutu=200, offset=0, tazele=False,
+        )
+        taban = self._kural_tabani.get(self.aktif_id)
+        if taban is None:
+            if not self._gelen_tam_mi(self.istemci):
+                return None  # önbellek tam değil — taban sonraki turda
+            self._kural_tabani[self.aktif_id] = {m.item_id for m in gelen}
+            return []
+        tasinan = []
+        for m in gelen:
+            if m.item_id in taban:
+                continue
+            taban.add(m.item_id)
+            for k in kurallar:
+                if _kural_eslesir(m, k):
+                    try:
+                        self.istemci.tasi(m, k["klasor"])
+                        tasinan.append(
+                            (m.konu, k.get("klasor_ad") or k["klasor"]))
+                    except Exception:
+                        pass  # taşınamadıysa yerinde kalır (IMAP/EWS hatası)
+                    break
+        if tasinan:
+            try:
+                self.istemci.guncelle(["inbox"])  # önbelleği hizala
+            except (EwsHata, requests.RequestException):
+                pass
+        return tasinan
 
     def _bildirim_baslat(self):
         """Bildirim denetimini (her 60 sn) başlatır."""
@@ -3717,6 +3841,11 @@ class Postacim(tk.Tk):
 
     def _otomatik_cek(self, klasor, sayfa_boyutu, offset, arama, alan):
         klasorler = self.istemci.klasor_listesi()
+        # Kurallar: gelen kutusuna düşen yeni iletiler otomatik taşınır
+        try:
+            tasinan = self._kurallari_uygula()
+        except (EwsHata, requests.RequestException):
+            tasinan = None
         mesajlar, toplam = self.istemci.mesajlar(
             klasor=klasor,
             sayfa_boyutu=sayfa_boyutu,
@@ -3728,7 +3857,7 @@ class Postacim(tk.Tk):
         )
         # Diğer hesapların gelen kutuları da denetlenir (bildirim için)
         diger = self._diger_hesap_gelen_sayilari()
-        return ("otomatik", klasorler, mesajlar, toplam, diger)
+        return ("otomatik", klasorler, mesajlar, toplam, diger, tasinan)
 
     def _diger_hesap_gelen_sayilari(self) -> dict:
         """Diğer hesapların gelen kutusu toplam sayısı: {hesap_id: sayı}."""
@@ -3913,14 +4042,18 @@ class Postacim(tk.Tk):
         self._bildirim_balon_durumu = False
         return True
 
-    def _otomatik_isle(self, klasorler, mesajlar, toplam, diger=None):
+    def _otomatik_isle(self, klasorler, mesajlar, toplam, diger=None,
+                       tasinan=None):
         """Otomatik yenileme sonucu: listeler sessizce tazelenir."""
         eski = {m.item_id for m in self.mesajlar}
         self._klasorleri_doldur(klasorler, mesajlari_yukle=False, durum_yaz=False)
         self._mesajlari_doldur(mesajlar, toplam, durum_yaz=False)
         net = sum(1 for m in mesajlar if m.item_id not in eski)
         if net:
-            self.durum.set(f"Otomatik yenileme — {net} yeni mesaj")
+            yazi = f"Otomatik yenileme — {net} yeni mesaj"
+            if tasinan:
+                yazi += f" • {len(tasinan)} ileti kural gereği taşındı"
+            self.durum.set(yazi)
         self._bildirimleri_denle(diger or {})
 
     def _bildirimleri_denle(self, diger: dict, aktif_sayi: int | None = None):
@@ -5819,6 +5952,22 @@ class HakkindaPenceresi(tk.Toplevel):
                 self.after(50, lambda: self._grab_al(deneme + 1))
 
 
+def _kural_eslesir(mesaj, kural: dict) -> bool:
+    """İleti, kurala uyuyor mu? (büyük/küçük harf duyarsız alt dize)
+
+    Kural: {"alan": "gonderen"|"konu", "desen": str, ...}. Gönderen
+    alanında gönderen adresi VE görünen ad aranır.
+    """
+    desen = (kural.get("desen") or "").strip().lower()
+    if not desen:
+        return False
+    if kural.get("alan") == "gonderen":
+        metin = f"{mesaj.gonderen or ''} {mesaj.gonderen_ad or ''}"
+    else:
+        metin = mesaj.konu or ""
+    return desen in metin.lower()
+
+
 def _hesap_kimlik_tam(hesap: dict) -> bool:
     """Hesapta bağlanacak kimlik var mı?
 
@@ -7643,6 +7792,7 @@ class AyarlarPenceresi(tk.Toplevel):
 
         self._genel_kur()
         self._takvim_kur()
+        self._kurallar_kur()
 
         alt = ttk.Frame(govde)
         alt.pack(fill="x", pady=(8, 0))
@@ -7740,6 +7890,27 @@ class AyarlarPenceresi(tk.Toplevel):
             variable=self.bildirim_degisken,
         ).grid(row=5, column=0, columnspan=3, sticky="w")
 
+        # Randevu hatırlatıcısı (olaydan X dk önce masaüstü bildirimi)
+        ttk.Label(sayfa, text="Randevu hatırlatıcısı:").grid(
+            row=6, column=0, sticky="w", pady=(8, 0)
+        )
+        self.hatirlatici_degisken = tk.StringVar()
+        hatirlatici_degerler = {
+            0: "Kapalı", 5: "5 dakika önce", 10: "10 dakika önce",
+            15: "15 dakika önce", 30: "30 dakika önce", 60: "1 saat önce",
+        }
+        self.hatirlatici_combo = ttk.Combobox(
+            sayfa, textvariable=self.hatirlatici_degisken, state="readonly",
+            values=list(hatirlatici_degerler.values()), width=16,
+        )
+        self.hatirlatici_combo.grid(row=6, column=1, columnspan=2, sticky="w",
+                                    pady=(8, 0))
+        mevcut_hatirlatici = int(
+            self.ana.ayarlar.al("hatirlatici_dakika", 10))
+        self.hatirlatici_degisken.set(
+            hatirlatici_degerler.get(mevcut_hatirlatici, "10 dakika önce"))
+        self._hatirlatici_degerler = hatirlatici_degerler
+
         self.balon_uyari = ttk.Label(
             sayfa,
             text="Sistem bildirim balonları kapalı — masaüstü uyarıları "
@@ -7747,17 +7918,17 @@ class AyarlarPenceresi(tk.Toplevel):
             foreground="#b3261e",
             wraplength=420,
         )
-        self.balon_uyari.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.balon_uyari.grid(row=7, column=0, columnspan=3, sticky="w", pady=(8, 0))
         ttk.Button(
             sayfa, text="Sistem bildirimlerini aç", command=self._balonlari_ac
-        ).grid(row=7, column=0, sticky="w", pady=(6, 0))
+        ).grid(row=8, column=0, sticky="w", pady=(6, 0))
         self._balon_uyarisini_guncelle()
 
         # --- Hava durumu konumu ---
         konum = self.ana.ayarlar.al("hava_konum", {}) or {}
         ttk.Label(
             sayfa, text="Hava durumu konumu:", font=("TkDefaultFont", 10, "bold")
-        ).grid(row=9, column=0, sticky="w", pady=(18, 6))
+        ).grid(row=10, column=0, sticky="w", pady=(18, 6))
         self.hava_il_degisken = tk.StringVar(
             value=konum.get("il") or "İstanbul")
         self.hava_ilce_degisken = tk.StringVar(
@@ -7766,21 +7937,87 @@ class AyarlarPenceresi(tk.Toplevel):
             sayfa, textvariable=self.hava_il_degisken,
             state="readonly", width=20,
         )
-        self.hava_il_combo.grid(row=10, column=0, columnspan=2, sticky="w")
+        self.hava_il_combo.grid(row=11, column=0, columnspan=2, sticky="w")
         self.hava_ilce_combo = ttk.Combobox(
             sayfa, textvariable=self.hava_ilce_degisken, width=20,
         )
-        self.hava_ilce_combo.grid(row=10, column=2, sticky="w", padx=(6, 0))
+        self.hava_ilce_combo.grid(row=11, column=2, sticky="w", padx=(6, 0))
         ttk.Label(
             sayfa,
             text="il seçilince ilçe listesi yüklenir (ilçe boş bırakılırsa "
                  "ilin öncelikli merkezi kullanılır); değişiklik Kaydet "
                  "ile uygulanır.",
             foreground="#666666", wraplength=430, justify="left",
-        ).grid(row=11, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ).grid(row=12, column=0, columnspan=3, sticky="w", pady=(8, 0))
         self.hava_il_combo.bind(
             "<<ComboboxSelected>>", self._hava_il_secildi)
         threading.Thread(target=self._hava_iller_yukle, daemon=True).start()
+
+    # ------------------------------------------------------------ Kurallar
+
+    def _kurallar_kur(self):
+        """Gelen kutusu kuralları sekmesi (gönderen/konu → klasöre taşı)."""
+        sayfa = ttk.Frame(self.defter, padding=12)
+        self.defter.add(sayfa, text="Kurallar")
+
+        hesap = self.ana.ayarlar.aktif_hesap() or {}
+        hesap_ad = hesap.get("ad") or hesap.get("kullanici") or "-"
+        ttk.Label(
+            sayfa,
+            text=f"Kurallar “{hesap_ad}” hesabının gelen kutusunda çalışır. "
+                 "Yeni iletiler Gönder/Al ve otomatik yenilemede denetlenir; "
+                 "sonradan eklenen kurallar mevcut postaları taşımaz.",
+            foreground="#666666", wraplength=520, justify="left",
+        ).pack(fill="x", pady=(0, 8))
+
+        sutunlar = ("alan", "desen", "klasor")
+        self.kurallar_tablo = ttk.Treeview(
+            sayfa, columns=sutunlar, show="headings", height=8,
+        )
+        for sut, baslik, gen in (
+            ("alan", "Alan", 110), ("desen", "İçeren metin", 240),
+            ("klasor", "Taşınacak klasör", 200),
+        ):
+            self.kurallar_tablo.heading(sut, text=baslik)
+            self.kurallar_tablo.column(sut, width=gen, anchor="w")
+        self.kurallar_tablo.pack(fill="both", expand=True)
+
+        dugmeler = ttk.Frame(sayfa)
+        dugmeler.pack(fill="x", pady=(8, 0))
+        ttk.Button(dugmeler, text="Kural Ekle…",
+                   command=self._kural_ekle).pack(side="left")
+        ttk.Button(dugmeler, text="Sil",
+                   command=self._kural_sil).pack(side="left", padx=(6, 0))
+
+        # Geçici liste: Kaydet'e kadar hesap.json'a yazılmaz
+        self.kurallar_liste = [
+            dict(k) for k in (self.ana.ayarlar.al("posta_kurallari", []) or [])
+            if (k.get("hesap") or "") == self.ana.aktif_id
+        ]
+        self._kurallari_ciz()
+
+    def _kurallari_ciz(self):
+        self.kurallar_tablo.delete(*self.kurallar_tablo.get_children())
+        for i, k in enumerate(self.kurallar_liste):
+            self.kurallar_tablo.insert("", "end", iid=str(i), values=(
+                "Gönderen" if k.get("alan") == "gonderen" else "Konu",
+                k.get("desen", ""),
+                k.get("klasor_ad") or k.get("klasor", ""),
+            ))
+
+    def _kural_ekle(self):
+        pencere = KuralPenceresi(self)
+        self.wait_window(pencere)
+        if pencere.sonuc:
+            self.kurallar_liste.append(pencere.sonuc)
+            self._kurallari_ciz()
+
+    def _kural_sil(self):
+        secim = self.kurallar_tablo.selection()
+        if not secim:
+            return
+        del self.kurallar_liste[int(secim[0])]
+        self._kurallari_ciz()
 
     def _hava_iller_yukle(self):
         """İl listesini MGM'den arka planda çeker."""
@@ -8049,6 +8286,22 @@ class AyarlarPenceresi(tk.Toplevel):
             else:
                 self.ana.durum.set("Yeni e-posta uyarıları kapatıldı.")
 
+        # Randevu hatırlatıcısı
+        hatirlatici = 0
+        for dakika, etiket in self._hatirlatici_degerler.items():
+            if etiket == self.hatirlatici_degisken.get():
+                hatirlatici = dakika
+                break
+        eski_hatirlatici = int(self.ana.ayarlar.al("hatirlatici_dakika", 10))
+        if hatirlatici != eski_hatirlatici:
+            self.ana.ayarlar.ayarla("hatirlatici_dakika", hatirlatici)
+            self.ana.ayarlar.kaydet()
+            self.ana._hatirlatilan.clear()  # yeni sürede yeniden değerlendir
+            self.ana.durum.set(
+                "Randevu hatırlatıcısı kapatıldı." if hatirlatici == 0
+                else f"Randevu hatırlatıcısı: {hatirlatici} dakika önce."
+            )
+
         # Hava durumu konumu
         eski_konum = self.ana.ayarlar.al("hava_konum", {}) or {}
         yeni_konum = {
@@ -8060,9 +8313,97 @@ class AyarlarPenceresi(tk.Toplevel):
             self.ana.ayarlar.kaydet()
             self.ana._hava_yenile()
 
+        # Kurallar (aktif hesap) — diğer hesapların kuralları korunur
+        eski_kurallar = [
+            k for k in (self.ana.ayarlar.al("posta_kurallari", []) or [])
+            if (k.get("hesap") or "") != self.ana.aktif_id
+        ]
+        self.ana.ayarlar.ayarla(
+            "posta_kurallari", eski_kurallar + self.kurallar_liste)
+        self.ana.ayarlar.kaydet()
+
         # Takvim stili
         self.ana.takvim_stil = self.stil
         self.ana._stil_kaydet()
         self.ana._takvim_stil_uygula()
         self.ana.durum.set("Ayarlar kaydedildi.")
+        self.destroy()
+
+
+class KuralPenceresi(tk.Toplevel):
+    """Yeni gelen kutusu kuralı penceresi (alan + desen + hedef klasör)."""
+
+    def __init__(self, ayar_penceresi: AyarlarPenceresi):
+        super().__init__(ayar_penceresi)
+        self.ayar = ayar_penceresi
+        self.sonuc: dict | None = None
+        self.title("Kural Ekle")
+        self.transient(ayar_penceresi)
+        self.resizable(False, False)
+        self.ana._pencere_simgesi(self)
+
+        govde = ttk.Frame(self, padding=12)
+        govde.pack(fill="both", expand=True)
+
+        ttk.Label(govde, text="Alan:").grid(row=0, column=0, sticky="w", pady=3)
+        self.alan_degisken = tk.StringVar(value="Gönderen")
+        ttk.Combobox(
+            govde, textvariable=self.alan_degisken, state="readonly",
+            values=("Gönderen", "Konu"), width=24,
+        ).grid(row=0, column=1, sticky="we", padx=(8, 0))
+
+        ttk.Label(govde, text="İçeren metin:").grid(
+            row=1, column=0, sticky="w", pady=3)
+        self.desen = ttk.Entry(govde, width=26)
+        self.desen.grid(row=1, column=1, sticky="we", padx=(8, 0))
+
+        ttk.Label(govde, text="Hedef klasör:").grid(
+            row=2, column=0, sticky="w", pady=3)
+        self._klasor_esle: dict[str, str] = {}
+        for k in self.ana.klasor_liste:
+            if k.kimlik and k.kimlik != "inbox":
+                self._klasor_esle.setdefault(k.ad, k.kimlik)
+        self.klasor_degisken = tk.StringVar()
+        ttk.Combobox(
+            govde, textvariable=self.klasor_degisken, state="readonly",
+            values=list(self._klasor_esle.keys()), width=24,
+        ).grid(row=2, column=1, sticky="we", padx=(8, 0))
+
+        alt = ttk.Frame(govde)
+        alt.grid(row=3, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(alt, text="Ekle", command=self._tamam).pack(side="left")
+        ttk.Button(alt, text="İptal", command=self.destroy).pack(
+            side="left", padx=(6, 0))
+
+        self.after_idle(self._grab_al)
+
+    @property
+    def ana(self):
+        return self.ayar.ana
+
+    def _grab_al(self, deneme=0):
+        try:
+            self.grab_set()
+            self.desen.focus_set()
+        except tk.TclError:
+            if deneme < 20 and self.winfo_exists():
+                self.after(50, lambda: self._grab_al(deneme + 1))
+
+    def _tamam(self):
+        desen = self.desen.get().strip()
+        klasor_kimlik = self._klasor_esle.get(self.klasor_degisken.get(), "")
+        if not desen or not klasor_kimlik:
+            messagebox.showwarning(
+                "Kural Ekle", "İçeren metni yazın ve hedef klasör seçin.",
+                parent=self,
+            )
+            return
+        self.sonuc = {
+            "alan": "gonderen" if self.alan_degisken.get() == "Gönderen"
+            else "konu",
+            "desen": desen,
+            "klasor": klasor_kimlik,
+            "klasor_ad": self.klasor_degisken.get(),
+            "hesap": self.ana.aktif_id,
+        }
         self.destroy()

@@ -2103,3 +2103,36 @@ yayınlamalı (v0.1.35 tag'i zaten 5da1614'te yayımlanmıştı).
 → DÜZELTME: ics_randevulari VEVENT içi alt bileşenleri (BEGIN:…END:)
   atlar. tests/ics_valarm_test.py (4) — run_all.sh 27/27. Gerçek
   Boyun Mr olayıyla doğrulandı: açıklama "Boyun MR ı çekilecek".
+
+## Oturum (2026-11-26) — Hatırlatıcılar + gelen kutusu kuralları (0.1.39)
+→ İSTEK: "şimdi geliştirme olarak ne yapalım?" → kullanıcı: "2. ve
+  4. adımları yapalım" (hatırlatıcılar + kurallar).
+→ UYGULAMA:
+  - Hatırlatıcı: ui.py `_hatirlatici_dongusu` (30 sn döngü) +
+    `_hatirlaticlari_denle` — yaklaşan randevuda `_bildirim_gonder`
+    (notify-send/D-Bus); `hatirlatici_dakika` tercihi (Ayarlar ▸
+    Genel ▸ Bildirimler; varsayılan 10 dk, 0=kapalı); tamamlanmış/
+    başlamışlar atlanır; oturum başına tek uyarı.
+  - Kurallar: config `posta_kurallari` (global liste; kural =
+    alan/desen/klasor/klasor_ad/hesap); `_kural_eslesir` (harf
+    duyarsız alt dize); `_kurallari_uygula` — aktif hesabın gelen
+    kutusunda YENİ iletilere uygulanır (Gönder/Al + otomatik
+    yenilemede); taban çizgisi ilk tam çekilişte alınır (sonradan
+    eklenen kural eski postaları topluca taşımaz); taşıma
+    başarısızse sessiz devam. Ayarlar ▸ Kurallar sekmesi (tablo +
+    Kural Ekle/Sil; KuralPenceresi — klasör listesi aktif
+    hesaptan). Sonuç: durum çubuğunda "N ileti kural gereği taşındı".
+→ TESTLER: hatirlatici_test (6) + kural_test (10); run_all.sh
+  43/43. Xvfb önizleme: Genel sekmesi (hatırlatıcı alanı) +
+  Kurallar sekmesi görüntülendi.
+→ DURUM: 0.1.39 yerelde commit — onay + "github push" bekleniyor
+  (0.1.38 de bekliyor; bu makinenin postacim-push anahtarı GitHub'da
+  tanımlı değil).
+
+### EK (2026-11-26) — Hatırlatıcı çökmesi düzeltildi (~/hata.png)
+→ HATA: "can't compare offset-naive and offset-aware datetimes" —
+  Z'li (bilinçli) damgalı EWS/Google olaylarıyla naive datetime.now()
+  karşılaştırılıyordu; her 30 sn'de hata penceresi açılıyordu.
+→ DÜZELTME: simdi = datetime.now().astimezone() + bilinçsiz damga
+  gelen kayda yerel dilim atanır. Z'li + ofsetli damga vakaları
+  test'e eklendi (hatirlatici_test 8 denetim) — run_all.sh 45/45.

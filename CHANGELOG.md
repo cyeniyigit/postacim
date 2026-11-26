@@ -3,6 +3,32 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.39] — 2026-11-26
+
+### Eklenen
+- **Randevu hatırlatıcıları:** randevudan X dakika önce masaüstü
+  bildirimi ("10 dakika önce / 30 dakika önce / 1 saat önce / Kapalı";
+  varsayılan 10 dakika — Ayarlar ▸ Genel ▸ Bildirimler). Tamamlanmış
+  ya da başlamış randevular uyarılmaz; bir randevu için oturum
+  başına yalnız kez uyarılır. Mevcut sistem bildirimi altyapısı
+  (notify-send / D-Bus) kullanılır.
+- **Gelen kutusu kuralları:** Ayarlar ▸ Kurallar sekmesinde
+  gönderen/konu "içeren metin" kuralları tanımlanır; gelen kutusuna
+  düşen YENİ iletiler Gönder/Al ve otomatik yenilemede otomatik
+  hedef klasöre taşınır (EWS MoveItem / IMAP MOVE, olmazsa
+  COPY+sil). Kurallar hesaba bağlıdır; sonradan eklenen kurallar
+  mevcut postaları topluca taşımaz (taban çizgisi ilk tam çekilişte
+  alınır). Taşınamayan iletiler yerinde kalır; posta akışı kesilmez.
+
+### Testler
+- `tests/hatirlatici_test.py` (yeni, 6 denetim): yaklaşan randevu
+  uyarısı, tek-kez uyarı, pencere dışı/tamamlanmış/kapalı/takvimsiz
+  durumlar.
+- `tests/kural_test.py` (yeni, 10 denetim): eşleştirme (gönderen/
+  konu, harf duyarsız), taban çizgisi, yeni ileti taşıma, diğer
+  hesap kuralının atlanması, taşıma hatasında sessiz devam.
+  run_all.sh 43/43 geçti.
+
 ## [0.1.38] — 2026-11-26
 
 ### Eklenen

@@ -23,7 +23,8 @@ ESKI_ANAHTARLAR = ("sunucu", "kullanici", "parola", "yontem", "son_klasor")
 # Yalnızca global tutulan tercihler
 GLOBAL_ANAHTARLAR = (
     "tema", "otomatik_yenile", "klasor_ebeveyn", "son_arama", "takvim_gorunum",
-    "takvim_stil", "tamamlanan_randevular",
+    "takvim_stil", "tamamlanan_randevular", "hatirlatici_dakika",
+    "posta_kurallari",
 )
 
 # Yeni hesap için varsayılanlar (tür bazlı)
