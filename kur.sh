@@ -95,6 +95,9 @@ echo "→ Bağımlılıklar kuruluyor…"
 
 # --------------------------------------------------------------- uygulama
 echo "→ Postacım paketi kuruluyor…"
+# Bayat derleme çıktısı pip'te yeniden kullanılabiliyor (eski kod kurulur):
+# kurulumdan önce build/ ve egg-info temizlenir.
+rm -rf "$DIZIN/build" "$DIZIN"/postacim*.egg-info
 if [ "$gelistirici" -eq 1 ]; then
     # Geliştirici kurulumu: kaynak koda bağlı (kod değişiklikleri anında yansır).
     if ! "$VPY" -m pip install --quiet -e "$DIZIN" 2>/dev/null; then
