@@ -35,6 +35,20 @@ NS = {
 # Exchange surumleri: eski sunucularda daha dusuk surum gerekebilir.
 SURUMLER = ("Exchange2013", "Exchange2010_SP2", "Exchange2010_SP1", "Exchange2010")
 
+# Tamamlandı işareti olayın kendisine yazılır (tüm makinelarda geçerli).
+# Kurum sunucusunda UpdateItem takvim öğelerinde engelli olduğundan
+# yazım sil + yeniden oluştur yoluna da düşebilir (bkz. tamamlandi_yaz).
+TAMAMLANDI_PSID = "c9e0e7ea-5b3e-4a5f-9d0c-1a2b3c4d5e6f"
+TAMAMLANDI_ADI = "PostacimTamamlandi"
+
+
+def _tamamlanmi_uri() -> str:
+    """ExtendedFieldURI öğesi (okuma/yazma isteklerinde kullanılır)."""
+    return (
+        f'<t:ExtendedFieldURI PropertySetId="{TAMAMLANDI_PSID}" '
+        f'PropertyName="{TAMAMLANDI_ADI}" PropertyType="Boolean"/>'
+    )
+
 # Sunucu kendi surumunu "15.2" gibi bildirir; EWS bunu kabul etmez,
 # istemcinin gonderdigi "Exchange2013" gibi bir sema surumu gerekir.
 SURUM_ESLESME = {
@@ -170,7 +184,7 @@ class Randevu:
     organizator: str = ""
     tur: str = "Single"    # Single | RecurringMaster | Occurrence ...
     aciklama: str = ""
-    tamamlandi: bool = False  # yerel işaret (hesap.json → tamamlanan_randevular)
+    tamamlandi: bool = False  # sunucudaki PostacimTamamlandi alanından
     rrule: str = ""        # tekrarlama kuralı (RFC 5545)
     exdate: str = ""       # hariç tutulan tarihler (virgüllü)
     rdate: str = ""        # eklenen tarihler (virgüllü)
@@ -532,6 +546,7 @@ class EwsIstemci:
         self._mime_onbellek: dict[str, bytes] = {}
         self._getattachment_calismiyor = False
         self._flag_destekli = True  # item:Flag zincirde okunuyor mu (oturum içi)
+        self._takvim_updateitem_destekli = True  # UpdateItem takvimde geçerli mi
         # Kullanıcı klasörleri (FindFolder): 60 sn önbellek — her yenilemede
         # ek istek atılmasın; klasor_olustur önbelleği düşürür.
         self._ozel_klasor_onbellek: list = None
@@ -815,7 +830,9 @@ class EwsIstemci:
             govde = (
                 "<m:SyncFolderItems>"
                 "<m:ItemShape><t:BaseShape>Default</t:BaseShape>"
-                "<t:Recurrence/></m:ItemShape>"
+                "<t:Recurrence/>"
+                "<t:AdditionalProperties>" + _tamamlanmi_uri() +
+                "</t:AdditionalProperties></m:ItemShape>"
                 '<m:SyncFolderId><t:DistinguishedFolderId Id="calendar"/></m:SyncFolderId>'
                 f"<m:SyncState>{_kacis(kayit['durum'])}</m:SyncState>"
                 "<m:Ignore/><m:MaxChangesReturned>512</m:MaxChangesReturned>"
@@ -868,6 +885,11 @@ class EwsIstemci:
         tekrarlama = el.find("t:Recurrence", NS)
         if tekrarlama is not None:
             rrule = _rrule_uret(tekrarlama)
+        tamamlandi = False
+        for ep in el.findall("t:ExtendedProperty", NS):
+            uri = ep.find("t:ExtendedFieldURI", NS)
+            if uri is not None and uri.get("PropertyName") == TAMAMLANDI_ADI:
+                tamamlandi = (ep.findtext("t:Value", "", NS).lower() == "true")
         return Randevu(
             item_id=item_id.get("Id", "") if item_id is not None else "",
             change_key=item_id.get("ChangeKey", "") if item_id is not None else "",
@@ -882,6 +904,7 @@ class EwsIstemci:
             organizator=(organizator.text or "") if organizator is not None else "",
             tur=(tur.text or "Single") if tur is not None else "Single",
             aciklama=(aciklama.text or "") if aciklama is not None else "",
+            tamamlandi=tamamlandi,
             rrule=rrule,
         )
 
@@ -895,8 +918,14 @@ class EwsIstemci:
         aciklama: str = "",
         tum_gun: bool = False,
         rrule: str = "",
+        tamamlandi: bool = False,
     ) -> str:
         """Takvim klasörüne yeni randevu ekler; item_id döner."""
+        ext = (
+            "<t:ExtendedProperty>" + _tamamlanmi_uri() +
+            "<t:Value>true</t:Value></t:ExtendedProperty>"
+            if tamamlandi else ""
+        )
         govde = (
             "<m:CreateItem SendMeetingInvitations=\"SendToNone\" "
             "MessageDisposition=\"SaveOnly\">"
@@ -911,11 +940,66 @@ class EwsIstemci:
             f"<t:Location>{_kacis(konum)}</t:Location>"
             f"<t:Body BodyType=\"Text\">{_kacis(aciklama)}</t:Body>"
             f"{_recurrence_xml(rrule)}"
+            f"{ext}"
             "</t:CalendarItem></m:Items></m:CreateItem>"
         )
         kok = self.istek(govde)
         kimlik = kok.find(".//m:Items/t:CalendarItem/t:ItemId", NS)
         return kimlik.get("Id", "") if kimlik is not None else ""
+
+    def tamamlandi_yaz(self, r: Randevu, tamamlandi: bool) -> None:
+        """Tamamlandı işaretini olaya yazar (ExtendedProperty).
+
+        Önce `UpdateItem` denenir; kurum sunucusu takvim öğelerinde
+        UpdateItem'ı reddettiği için (bkz. randevu_guncelle) sil +
+        yeniden oluştur yoluna düşülür — item_id değişir.
+        """
+        if not r.item_id:
+            raise EwsHata("Randevu kimliği yok — işaret yazılamadı.")
+        if self._takvim_updateitem_destekli:
+            try:
+                govde = (
+                    '<m:UpdateItem SendMeetingInvitations="SendToNone">'
+                    "<m:ItemChanges><t:ItemChange>"
+                    f'<t:ItemId Id="{_kacis(r.item_id)}" '
+                    f'ChangeKey="{_kacis(r.change_key)}"/>'
+                    "<t:Updates><t:SetItemField>"
+                    + _tamamlanmi_uri() +
+                    "<t:ExtendedProperty>" + _tamamlanmi_uri() +
+                    f"<t:Value>{'true' if tamamlandi else 'false'}</t:Value>"
+                    "</t:ExtendedProperty>"
+                    "</t:SetItemField></t:Updates>"
+                    "</t:ItemChange></m:ItemChanges></m:UpdateItem>"
+                )
+                kok = self.istek(govde)
+                if kok.find(
+                    ".//m:UpdateItemResponseMessage"
+                    "[@ResponseClass='Error']", NS
+                ) is None:
+                    yeni = kok.find(".//t:ItemId", NS)
+                    if yeni is not None and yeni.get("ChangeKey"):
+                        r.change_key = yeni.get("ChangeKey")
+                    r.tamamlandi = tamamlandi
+                    return
+            except EwsHata:
+                pass  # kurum engelli → sil + yeniden oluştur
+            self._takvim_updateitem_destekli = False
+        # Sil + yeniden oluştur (item_id değişir)
+        bas = _iso_yerel(r.baslangic)
+        bit = _iso_yerel(r.bitis)
+        if bas is None:
+            raise EwsHata("Randevu başlangıç zamanı geçersiz.")
+        if bit is None:
+            bit = bas + timedelta(hours=1)
+        eski = Randevu(item_id=r.item_id, change_key=r.change_key)
+        self.randevu_sil(eski)
+        yeni_id = self.randevu_ekle(
+            r.baslik, bas, bit, r.konum, r.aciklama, r.tum_gun,
+            rrule=r.rrule, tamamlandi=tamamlandi,
+        )
+        r.item_id = yeni_id
+        r.change_key = ""
+        r.tamamlandi = tamamlandi
 
     def randevu_guncelle(self, r: Randevu) -> None:
         """Randevunun alanlarını günceller.
@@ -933,7 +1017,8 @@ class EwsIstemci:
         eski = Randevu(item_id=r.item_id, change_key=r.change_key)
         self.randevu_sil(eski)
         yeni_id = self.randevu_ekle(
-            r.baslik, bas, bit, r.konum, r.aciklama, r.tum_gun
+            r.baslik, bas, bit, r.konum, r.aciklama, r.tum_gun,
+            tamamlandi=r.tamamlandi,  # işaret düzenlemede korunur
         )
         r.item_id = yeni_id
         r.change_key = ""

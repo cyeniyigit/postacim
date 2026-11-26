@@ -3,6 +3,36 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.38] — 2026-11-26
+
+### Eklenen
+- **Tamamlandı işaretinin makinelar arası senkronu:** takvimde
+  işaretlenen "tamamlandı" artık sunucudaki olayın kendisine yazılır
+  (CalDAV: `X-POSTACIM-TAMAMLANDI` alanı; EWS: `PostacimTamamlandi`
+  genişletilmiş özelliği) ve tüm makinelarda aynı görünür. İşareti
+  kaldırmak da sunucuya yazılır. Tekrarlayan serinin **tek kopyaları**
+  için işaret yine yereldir (Google CalDAV kopya yazımını kabul
+  etmiyor — canlı doğrulandı); seriyi kapsayan işaret tüm kopyalara
+  yansır. Eski sürümden kalan yerel işaretler ilk çekilişte sunucuya
+  otomatik taşınır. Kurum EWS'te UpdateItem takvim öğelerinde engelli
+  olduğundan yazım sil + yeniden oluştur yoluyla da çalışır (canlı
+  doğrulandı: CreateItem/GetItem/SyncFolderItems alanı koruyor).
+
+### Düzeltilen
+- **Açıklamaya hatırlatıcı metni karışması:** Google'ın olaylara
+  gömdüğü hatırlatıcı bloğu (VALARM) kendi
+  "This is an event reminder" açıklamasını olayın açıklamasına
+  katıyordu (düzenleyip kaydedince kalıcılaşıyordu). Ayrıştırıcı artık
+  VEVENT içine gömülü bileşenleri atlar; olay açıklaması temiz gelir.
+
+### Testler
+- `tests/tamamlanan_sunucu_test.py` (yeni, çevrimdışı, 16 denetim):
+  CalDAV X- okuma/yazma/kaldırma, EWS ExtendedProperty okuma/yazma
+  (UpdateItem + yedek yol), arayüz işaret birleştirmesi (sunucu esas,
+  kopya yerel işareti, eski kayıt taşıma).
+- `tests/ics_valarm_test.py` (yeni, çevrimdışı, 4 denetim): VALARM
+  bloğunun açıklamaya katılmaması (gerçek Google çıktısıyla).
+
 ## [0.1.37] — 2026-11-25
 
 ### Eklenen

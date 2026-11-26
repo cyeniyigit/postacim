@@ -2043,7 +2043,7 @@ class Postacim(tk.Tk):
                 f"{r.item_id or getattr(r, 'uid', '')}"
                 f"#{bas.strftime('%Y%m%dT%H%M%S')}"
             )
-            kopya.tamamlandi = False
+            kopya.tamamlandi = r.tamamlandi  # seriyi kapsayan sunucu işareti
             sonuc.append(kopya)
         return sonuc
 
@@ -2068,6 +2068,7 @@ class Postacim(tk.Tk):
         if not hasattr(self, "_gun_hucreleri"):
             return
         self._tekrar_genislet()
+        self._tamamlanmalari_uygula()  # yeni üretilen kopyalara da uygula
         if self.takvim_gorunum == "hafta":
             self._hafta_ciz()
         elif self.takvim_gorunum == "gun":
@@ -2385,26 +2386,128 @@ class Postacim(tk.Tk):
     def _randevu_tamamla(self, r: Randevu):
         """Randevunun tamamlandı işaretini değiştirir, kaydeder ve çizer."""
         r.tamamlandi = not r.tamamlandi
-        kimlik = r.kimlik
-        liste = list(self.ayarlar.al("tamamlanan_randevular", []) or [])
-        if r.tamamlandi:
-            if kimlik not in liste:
-                liste.append(kimlik)
+        if getattr(r, "occurrence_id", ""):
+            # Tekrar kopyası: sunucuya kopya başına yazılamıyor (Google
+            # CalDAV override PUT'unu atıyor, EWS'te kopya ayrı öğe değil)
+            # → işaret yerelde kalır (hesap.json → tamamlanan_randevular).
+            kimlik = r.kimlik
+            liste = list(self.ayarlar.al("tamamlanan_randevular", []) or [])
+            if r.tamamlandi:
+                if kimlik not in liste:
+                    liste.append(kimlik)
+            else:
+                liste = [x for x in liste if x != kimlik]
+            self.ayarlar.ayarla("tamamlanan_randevular", liste)
+            self.ayarlar.kaydet()
+            self._takvim_ciz()
+            self.durum.set(
+                "Randevu tamamlandı olarak işaretlendi." if r.tamamlandi
+                else "Tamamlandı işareti kaldırıldı."
+            )
         else:
-            liste = [x for x in liste if x != kimlik]
-        self.ayarlar.ayarla("tamamlanan_randevular", liste)
-        self.ayarlar.kaydet()
-        self._takvim_ciz()
-        self.durum.set(
-            "Randevu tamamlandı olarak işaretlendi." if r.tamamlandi
-            else "Tamamlandı işareti kaldırıldı."
-        )
+            # Ana/tek seferlik kayıt: işaret olayın kendisine yazılır —
+            # tüm makinelarda aynı görünür.
+            self._takvim_ciz()
+            self.durum.set("Tamamlandı işareti sunucuya yazılıyor…")
+            self._tamamlanmi_sunucuya_yaz(r)
 
-    def _tamamlanmalari_uygula(self):
-        """Kayıtlı tamamlandı işaretlerini yüklenen randevulara uygular."""
+    def _tamamlanmi_sunucuya_yaz(self, r: Randevu):
+        """Tamamlandı işaretini arka planda sunucuya yazar.
+
+        Başarıda durum çubuğuna yazar; başarısızlıkta işareti eski
+        haline döndürüp durum çubuğunda uyarır (iletişim kutusu açmaz).
+        """
+        caldav_mi = bool(getattr(r, "url", ""))
+        kaynak_id = getattr(r, "kaynak_id", "")
+        hedef = r
+        tamam = r.tamamlandi
+
+        def is_():
+            try:
+                if caldav_mi:
+                    cal = self._kaynak_caldav(kaynak_id)
+                    if cal is None:
+                        raise EwsHata("CalDAV takvim hesabı yok.")
+                    self._caldav_istemci(cal).tamamlandi_yaz(hedef, tamam)
+                else:
+                    istemci = self._istemciler.get(kaynak_id or self.aktif_id)
+                    if istemci is None:
+                        hesap = self.ayarlar.aktif_hesap() or {}
+                        istemci = self._istemci_kur(hesap)
+                        self._istemciler[self.aktif_id] = istemci
+                    istemci.tamamlandi_yaz(hedef, tamam)
+            except (EwsHata, requests.RequestException) as exc:
+                return ("tamamlandi_yazilamadi", hedef, tamam, str(exc))
+            return ("tamamlandi_yazildi", hedef, tamam,
+                    "Tamamlandı işareti sunucuya yazıldı." if tamam
+                    else "Tamamlandı işareti sunucudan kaldırıldı.")
+
+        threading.Thread(target=self._arka_plan, args=(is_,), daemon=True).start()
+
+    def _tamamlanmalari_uygula(self, tasi: bool = False):
+        """Tamamlandı işaretlerini yüklenen randevulara uygular.
+
+        İşaret artık sunucudaki olayın kendisinden okunur (tüm
+        makinelarda geçerli). `tamamlanan_randevular` yerel listesi
+        yalnız şunlar için geçerlidir:
+          * tekrar kopyası işaretleri (sunucuya kopya başına yazılamıyor),
+          * eski sürümden kalan yerel işaretlerin sunucuya taşınması
+            (yalnız `tasi=True` ile — her çekilişte bir kez; her çizimde
+            iş parçacığı üretmemesi için).
+        """
         liste = set(self.ayarlar.al("tamamlanan_randevular", []) or [])
+        # Ana kayıtların sunucu işaretleri (kopyalar usta kayıttan okur)
+        sunucu = {
+            r.item_id: bool(r.tamamlandi)
+            for r in self.randevular
+            if not getattr(r, "occurrence_id", "")
+        }
+        tasinacak = []
         for r in list(self.randevular) + list(self._genis_randevular):
-            r.tamamlandi = r.kimlik in liste
+            kopya = bool(getattr(r, "occurrence_id", ""))
+            yerel = r.kimlik in liste
+            if not kopya and yerel and not r.tamamlandi:
+                tasinacak.append(r)  # eski yerel işaret → sunucuya yazılır
+            if kopya:
+                r.tamamlandi = sunucu.get(
+                    r.item_id, bool(r.tamamlandi)) or yerel
+            else:
+                r.tamamlandi = bool(r.tamamlandi) or yerel
+        if tasi and tasinacak:
+            self._tamamlanmalari_tasi(tasinacak)
+
+    def _tamamlanmalari_tasi(self, kayitlar: list):
+        """Eski sürümden kalan yerel işaretleri sunucuya taşır (bir kez).
+
+        Başarılı taşımada kimlik yerel listeden çıkarılır (sunucu tek
+        doğruluk kaynağı olur); başarısızlıkta listede kalır ve bir
+        sonraki çekilişte yeniden denenir.
+        """
+
+        def is_():
+            tasiunan = []
+            son_hata = ""
+            for r in kayitlar:
+                try:
+                    if getattr(r, "url", ""):
+                        cal = self._kaynak_caldav(getattr(r, "kaynak_id", ""))
+                        if cal is not None:
+                            self._caldav_istemci(cal).tamamlandi_yaz(r, True)
+                            tasiunan.append(r.kimlik)
+                            continue
+                    hesap = self.ayarlar.aktif_hesap() or {}
+                    istemci = self._istemciler.get(
+                        getattr(r, "kaynak_id", "") or self.aktif_id)
+                    if istemci is None:
+                        istemci = self._istemci_kur(hesap)
+                        self._istemciler[self.aktif_id] = istemci
+                    istemci.tamamlandi_yaz(r, True)
+                    tasiunan.append(r.kimlik)
+                except (EwsHata, requests.RequestException) as exc:
+                    son_hata = str(exc)
+            return ("tamamlandi_tasindi", tasiunan, son_hata)
+
+        threading.Thread(target=self._arka_plan, args=(is_,), daemon=True).start()
 
     def _cizili_font(self, deger) -> tkfont.Font:
         """(aile, boyut[, stil]) bağıntısını üstü çizili Font'a çevirir (önbellekli)."""
@@ -2532,14 +2635,15 @@ class Postacim(tk.Tk):
 
     def _takvim_sonuc(self, randevular: list):
         self.randevular = list(randevular)
-        self._tamamlanmalari_uygula()
         self.takvim_yuklendi = True
         self._takvim_ciziliyor = False
         self.durum.set(f"Takvim: {len(self.randevular)} randevu")
         # Veri geldikten sonra görünüm yeniden çizilmeli (Ay/Gün/Hafta +
         # ajanda); aksi halde ızgara ilk çizildiği (boş) haliyle kalır.
         self._tekrar_genislet(zorla=True)
-        self._tamamlanmalari_uygula()  # tekrar kopyalarına da işaret uygula
+        # İşaretler sunucudan gelir; kopyalara uygulanır; eski sürümden
+        # kalan yerel işaretler bir kez sunucuya taşınır.
+        self._tamamlanmalari_uygula(tasi=True)
         self._takvim_ciz()
 
     def _durum_cubugu_kur(self):
@@ -3008,6 +3112,33 @@ class Postacim(tk.Tk):
             self.takvim_yuklendi = False
             self._takvim_ciziliyor = False
             self._takvim_cek()
+        elif tur == "tamamlandi_yazildi":
+            veri[1].tamamlandi = veri[2]
+            self._takvim_ciz()
+            self.durum.set(veri[3])
+        elif tur == "tamamlandi_yazilamadi":
+            veri[1].tamamlandi = not veri[2]  # işareti geri al
+            self._takvim_ciz()
+            self.durum.set(f"Tamamlandı işareti yazılamadı: {veri[3]}")
+        elif tur == "tamamlandi_tasindi":
+            tasiunan, son_hata = veri[1], veri[2]
+            if tasiunan:
+                liste = [
+                    x for x in (self.ayarlar.al("tamamlanan_randevular", []) or [])
+                    if x not in set(tasiunan)
+                ]
+                self.ayarlar.ayarla("tamamlanan_randevular", liste)
+                self.ayarlar.kaydet()
+                self._takvim_ciz()
+            if son_hata:
+                self.durum.set(
+                    f"Bazı tamamlandı işaretleri sunucuya taşınamadı: {son_hata}"
+                )
+            elif tasiunan:
+                self.durum.set(
+                    f"{len(tasiunan)} tamamlandı işareti sunucuya taşındı — "
+                    "artık tüm makinelarda geçerli."
+                )
         elif tur == "resim":
             self._resim_yerlestir(veri[1], veri[2])
         elif tur == "govde_denetim":

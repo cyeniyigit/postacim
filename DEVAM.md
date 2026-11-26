@@ -2052,3 +2052,54 @@ Kullanıcı kararları (netleştirme sorusuyla):
 → GERÇEKLEŞTİ: 0.1.36 (MEB desteği + sertifika onarımı + pencere
 taşmaları) GitHub'a push edildi. Kullanıcı v0.1.36 release'ini
 yayınlamalı (v0.1.35 tag'i zaten 5da1614'te yayımlanmıştı).
+
+## Oturum (2026-11-26) — Tamamlandı işaretinin sunucuya yazılması
+→ İSTEK: ev makinesinde işaretlenen görev/randevular iş makinesinde
+  tamamlanmamış görünüyordu — işaret yalnız makinenin hesap.json'unda
+  tutuluyordu (yerel işaret). Kullanıcı "evet yapalım" ile sunucuya
+  yazım kararı verdi.
+→ CANLI DOĞRULAMA (tahmin yok):
+  - Google CalDAV (kullanıcının Gmail takvimi): ana olaya PUT ile
+    eklenen X-POSTACIM-TAMAMLANDI:TRUE GET ile geri geliyor ✓;
+    ANCAK master'a eklenen tek-kopya (override, RECURRENCE-ID'li)
+    VEVENT Google tarafından ATILIYOR → kopya başına sunucu işareti
+    mümkün değil, kopya işaretleri yerelde kaldı.
+  - Kurum EWS (mail.tarimorman.gov.tr): UpdateItem takvim öğelerinde
+    ErrorSendMeetingInvitationsOrCancellationsRequired (3 varyantta
+    da) → engelli; CreateItem + ExtendedProperty yazımı, GetItem ve
+    SyncFolderItems AdditionalProperties ile OKUMA ✓.
+→ UYGULAMA:
+  - caldav.py: TAMAMLANDI_ALANI + ics_randevulari okuması +
+    tamamlandi_ics() + CalDavIstemci.tamamlandi_yaz() (PUT) +
+    randevu_guncelle'de işaret korunumu.
+  - ews.py: TAMAMLANDI_PSID/ADI + _tamamlanmi_uri(); SyncFolderItems
+    ItemShape'e AdditionalProperties; _randevu okuması;
+    randevu_ekle(tamamlandi=); randevu_guncelle işaret korur;
+    tamamlandi_yaz(): önce UpdateItem, reddedilirse sil+yeniden
+    oluştur (_takvim_updateitem_destekli oturum işaretiyle).
+  - ui.py: _randevu_tamamla — ana kayıtta sunucuya (arka plan iş
+    parçacığı), tekrar kopyasında yerel liste (eski davranış);
+    _tamamlanmalari_uygula(tasi=) — sunucu esas + kopya eşlemesi +
+    eski yerel işaretlerin tek seferlik sunucuya taşınması;
+    _sonuc_isle'e tamamlandi_yazildi/yazilamadi/tasindi sonuçları
+    (başarısızlıkta işaret geri alınır, iletişim kutusu AÇILMAZ);
+    _takvim_ciz her çizimde işaretleri uygular; kopyalar seriyi
+    kapsayan işareti devralır.
+→ TESTLER: tests/tamamlanan_sunucu_test.py (16 denetim, çevrimdışı);
+  run_all.sh 23/23. Uçtan uca canlı: Google yaz→ok→kaldır ✓,
+  EWS yaz(SyncFolderItems okumalı)→kaldır ✓ (geçici olaylarla).
+→ ÖNİZLEME: Xvfb'de işaretli geçici olay hafta ızgarası + ajandada
+  üstü çizili gösterildi (/tmp/opencode/onizleme.png); geçici olaylar
+  silindi.
+→ DURUM: sürüm 0.1.38'e yükseltildi; commit yerelde — onay +
+  "github push" bekleniyor. Kurulu kopya güncellendi.
+
+### EK (2026-11-26) — Açıklamaya hatırlatıcı metni karışması
+→ İSTEK: "açıklama kısmında Boyun MR ı çekilecek yazdıysam kendisi
+  This is an event reminder ifadesini ekliyor."
+→ KÖK NEDEN (canlı): Google VALARM bloğu (30 dk hatırlatıcı) gömer;
+  bloğun kendi DESCRIPTION'ı ayrıştırıcıda olay açıklamasına
+  katılıyordu (save'te kalıcılaşır). Sunucudaki açıklama temiz.
+→ DÜZELTME: ics_randevulari VEVENT içi alt bileşenleri (BEGIN:…END:)
+  atlar. tests/ics_valarm_test.py (4) — run_all.sh 27/27. Gerçek
+  Boyun Mr olayıyla doğrulandı: açıklama "Boyun MR ı çekilecek".

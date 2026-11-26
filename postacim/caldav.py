@@ -26,6 +26,10 @@ NS_DAV = "DAV:"
 NS_CALENDAR = "urn:ietf:params:xml:ns:caldav"
 NS_ICS = "http://calendarserver.org/ns/"
 
+# Tamamlandı işareti olayın kendisine yazılır (tüm makinelarda geçerli);
+# RFC 5545 özel X- alanı — sunucular (Google dahil) bunu koruyor.
+TAMAMLANDI_ALANI = "X-POSTACIM-TAMAMLANDI"
+
 HEADERS_BASE = {
     "User-Agent": "Postacim/1.0",
     "Content-Type": "application/xml; charset=utf-8",
@@ -63,7 +67,7 @@ class RandevuKaydi:
     organizator: str = ""
     tur: str = "Single"
     ics: str = ""           # ham iCalendar (güncelleme için)
-    tamamlandi: bool = False  # yerel işaret (hesap.json → tamamlanan_randevular)
+    tamamlandi: bool = False  # sunucudaki X-POSTACIM-TAMAMLANDI alanından
     rrule: str = ""         # tekrarlama kuralı (RFC 5545)
     exdate: str = ""        # hariç tutulan tarihler (virgüllü)
     rdate: str = ""         # eklenen tarihler (virgüllü)
@@ -234,6 +238,8 @@ def ics_randevulari(ics: str, kaynak_url: str = "", etag: str = "") -> list[Rand
                     ).replace("mailto:", ""),
                     tur=kayit.get("RRULE", "") and "Recurring" or "Single",
                     ics=kayit.get("_ics", ""),
+                    tamamlandi=(kayit.get(TAMAMLANDI_ALANI, "")
+                                .strip().upper() == "TRUE"),
                     rrule=kayit.get("RRULE", ""),
                     exdate=_tarihler_birlestir(kayit.get("_EXDATE", [])),
                     rdate=_tarihler_birlestir(kayit.get("_RDATE", [])),
@@ -242,20 +248,35 @@ def ics_randevulari(ics: str, kaynak_url: str = "", etag: str = "") -> list[Rand
         kayit = {}
         aciklama_satirlari = []
 
+    ic_derinlik = 0  # VEVENT içine gömülü alt bileşenler (VALARM vb.)
     for satir in _ics_satirlari_bol(ics):
-        if satir.strip() == "BEGIN:VEVENT":
+        kelime = satir.strip()
+        if kelime == "BEGIN:VEVENT":
             icinde = True
             kayit = {}
             aciklama_satirlari = []
             aciklama_modu = False
-            continue
-        if satir.strip() == "END:VEVENT":
-            if icinde:
-                kayit["_ics"] = ics  # tam metin; güncelleme için yeterli
-                kapat()
-            icinde = False
+            ic_derinlik = 0
             continue
         if not icinde:
+            continue
+        if kelime == "END:VEVENT" and ic_derinlik == 0:
+            kayit["_ics"] = ics  # tam metin; güncelleme için yeterli
+            kapat()
+            icinde = False
+            continue
+        if kelime.startswith("BEGIN:"):
+            # Alt bileşen (VALARM vb.): içeriği olay verisi değildir —
+            # Google hatırlatıcı DESCRIPTION'ını buraya koyar.
+            ic_derinlik += 1
+            aciklama_modu = False
+            continue
+        if kelime.startswith("END:"):
+            if ic_derinlik:
+                ic_derinlik -= 1
+            aciklama_modu = False
+            continue
+        if ic_derinlik:
             continue
         anahtar, parametreler, deger = _ics_alan(satir)
         if anahtar == "DESCRIPTION":
@@ -267,6 +288,7 @@ def ics_randevulari(ics: str, kaynak_url: str = "", etag: str = "") -> list[Rand
         elif anahtar in (
             "UID", "SUMMARY", "DTSTART", "DTEND", "LOCATION",
             "ORGANIZER", "RRULE", "STATUS", "RECURRENCE-ID",
+            TAMAMLANDI_ALANI,
         ):
             aciklama_modu = False
             kayit[anahtar] = deger
@@ -710,6 +732,8 @@ class CalDavIstemci:
             ics = _ics_alan_degistir(ics, "RRULE", r.rrule, kacis=False)
         else:
             ics = re.sub(r"(?m)^RRULE:.*\r?\n", "", ics)
+        # Tamamlandı işareti (düzenlemede korunur/yazılır)
+        ics = tamamlandi_ics(ics, r.tamamlandi)
         ek_basliklar = {"Content-Type": "text/calendar; charset=utf-8"}
         if r.etag:
             ek_basliklar["If-Match"] = f'"{r.etag}"'
@@ -724,6 +748,38 @@ class CalDavIstemci:
             yeni_etag = self._etag_al(r.url)
         r.etag = yeni_etag or r.etag
 
+    def tamamlandi_yaz(self, r: RandevuKaydi, tamamlandi: bool) -> None:
+        """Tamamlandı işaretini olayın kendisine yazar (X- alanı + PUT).
+
+        İşaret sunucuda saklandığı için tüm makinelarda aynı görünür;
+        tekrar kopyası başına yazılamaz (Google, override PUT'unu atıyor).
+        """
+        if not r.url:
+            raise CalDavHata("Güncelleme için kayıt URL'i yok.")
+        ics = r.ics or randevu_ics(
+            r.baslik,
+            _iso_yerel_dt(r.baslangic),
+            _iso_yerel_dt(r.bitis) or _iso_yerel_dt(r.baslangic) + timedelta(hours=1),
+            r.konum, r.aciklama, r.tum_gun, uid=r.uid,
+        )
+        ics = tamamlandi_ics(ics, tamamlandi)
+        ek_basliklar = {"Content-Type": "text/calendar; charset=utf-8"}
+        if r.etag:
+            ek_basliklar["If-Match"] = f'"{r.etag}"'
+        yanit = self._istek(
+            "PUT", r.url, veri=ics.encode("utf-8"), ek_basliklar=ek_basliklar
+        )
+        if yanit.status_code not in (200, 201, 204):
+            raise CalDavHata(
+                f"Tamamlandı işareti yazılamadı ({yanit.status_code})."
+            )
+        r.ics = ics
+        r.tamamlandi = tamamlandi
+        yeni_etag = (yanit.headers.get("ETag") or "").strip('"')
+        if not yeni_etag:
+            yeni_etag = self._etag_al(r.url)
+        r.etag = yeni_etag or r.etag
+
     def randevu_sil(self, r: RandevuKaydi) -> None:
         if not r.url:
             raise CalDavHata("Silme için kayıt URL'i yok.")
@@ -733,6 +789,17 @@ class CalDavIstemci:
         yanit = self._istek("DELETE", r.url, ek_basliklar=ek)
         if yanit.status_code not in (200, 202, 204, 404):
             raise CalDavHata(f"Randevu silinemedi ({yanit.status_code}).")
+
+
+def tamamlandi_ics(ics: str, tamamlandi: bool) -> str:
+    """iCalendar metninde X-POSTACIM-TAMAMLANDI alanını yazar/kaldırır."""
+    if tamamlandi:
+        return _ics_alan_degistir(
+            ics, TAMAMLANDI_ALANI, "TRUE", kacis=False
+        )
+    return re.sub(
+        rf"(?m)^{TAMAMLANDI_ALANI}(?:;[^:]*)?:.*(?:\r?\n|$)", "", ics
+    )
 
 
 def _iso_yerel_dt(ts: str) -> datetime:
