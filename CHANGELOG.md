@@ -3,6 +3,24 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.40] — 2026-11-26
+
+### Eklenen
+- **Kandilli deprem göstergesi:** üst çubukta hava durumu panelinin
+  solunda bugünkü en yeni ML 4.0 üzeri deprem gösterilir (altında saati
+  ve günün en büyüğü); 4.0 üzeri deprem yokken soluk "Deprem yok" yazar.
+  Panel simgesi kandilli-quake eklentisi kuralıyla günün en büyüğüne
+  göre değişir (ML≥5 uyarı, ML≥6 önemli). Panele tıklayınca ayrıntı
+  penceresi: büyüklük simgeli günlük özet, konum pini ile en çok deprem
+  olan konumlar ve ML 4.0 üzeri liste. Veri Kandilli Rasathanesi'nden
+  (KOERI) 5 dakikada bir alınır.
+
+### Düzeltilen
+- **Kurulum:** `kur.sh` masaüstü girdisini (`postacim.desktop`) artık
+  geçici dosya + `mv` ile atomik yazıyor; içerik değişmediyse hiç
+  dokunmuyor. Önceden dosya kesilip yeniden yazıldığından GNOME menüsü
+  (ArcMenu) yarım dosyayı okuyup gnome-shell'i çökertebiliyordu.
+
 ## [0.1.39] — 2026-11-26
 
 ### Eklenen

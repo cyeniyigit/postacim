@@ -176,7 +176,14 @@ PY
     fi
 fi
 
-cat > "$DESKTOP" <<EOF
+# Masaüstü girdisi atomik yazılır: `cat > dosya` önce dosyayı keser, menü
+# (GNOME/ArcMenu, GMenu) dizini izlediği için arada boş/yarım dosyayı okuyup
+# gnome-shell'i çökertebiliyor (SEGV, oturum kapanır). Gizli geçici dosya
+# (.desktop uzantısız → menü yok sayar) aynı dizine yazılıp `mv` ile konur;
+# içerik değişmediyse dosyaya hiç dokunulmaz (menü gereksiz yere tetiklenmez).
+DESKTOP_GECICI="$(mktemp "$MASAUSTU/.$AD.XXXXXX")"
+trap 'rm -f "$DESKTOP_GECICI"' EXIT
+cat > "$DESKTOP_GECICI" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Postacım
@@ -188,7 +195,13 @@ Categories=Network;Email;
 StartupNotify=true
 StartupWMClass=postacim
 EOF
-chmod +x "$BASLATICI"
+if [ -f "$DESKTOP" ] && cmp -s "$DESKTOP_GECICI" "$DESKTOP"; then
+    DESKTOP_DEGISTI=0
+else
+    chmod 644 "$DESKTOP_GECICI"
+    mv -f "$DESKTOP_GECICI" "$DESKTOP"
+    DESKTOP_DEGISTI=1
+fi
 
 # --------------------------------------------------------------- kaldırıcı
 # Kaynak klasörü silinse bile kaldırma yapılabilsin diye bağımsız kaldırıcı
@@ -198,8 +211,9 @@ if [ -f "$DIZIN/tools/kaldir.sh" ]; then
     chmod +x "$KALDIRICI"
 fi
 
-# Menüde görünmesi için (çoğu masaüstü ortamı bunu izler)
-if command -v update-desktop-database >/dev/null 2>&1; then
+# Menüde görünmesi için (çoğu masaüstü ortamı bunu izler); girdi
+# değişmediyse önbelleği yeniden yazıp menüyü tetiklemeye gerek yok.
+if [ "$DESKTOP_DEGISTI" -eq 1 ] && command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$MASAUSTU" >/dev/null 2>&1 || true
 fi
 

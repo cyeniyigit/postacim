@@ -27,6 +27,10 @@ Her güncellemede bu sıra izlenir; hiçbir adım atlanmaz:
    ~/.local/share/postacim/venv/bin/python -m pip install .
    # ya da: ./kur.sh
    ```
+   **(Kural 10, 2026-11-26):** Bu adım artık her değişiklik tamamlandığında,
+   **sürüm numarası değiştirilmeden** ve push beklenmeden yapılır —
+   menüdeki Postacım son hâliyle çalışır; sürüm numarası yalnız
+   "github push" tetikleyicisinde güncellenir.
 
 Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
 Bugün büyük ilerleme kaydedildi. Proje artık **çalışır durumda**.
@@ -2151,3 +2155,125 @@ yayınlamalı (v0.1.35 tag'i zaten 5da1614'te yayımlanmıştı).
   çökmesi düzeltilmişken bile hata devam etti — ~/hata.png);
   kur.sh'a kurulum öncesi `rm -rf build/ *.egg-info` eklendi,
   kurulu kopya temiz kurulumla tazelendi.
+
+## Oturum (2026-11-26) — kur.sh: masaüstü girdisi atomik yazılıyor
+→ ÇÖKME: 19:25'te `./kur.sh` çalışırken GNOME oturumu kapandı.
+  coredump: gnome-shell SIGSEGV, `gmenu_tree_load_sync →
+  g_desktop_app_info_get_is_hidden` (bellek boştaydı, OOM değil).
+  `cat > postacim.desktop` dosyayı önce kesip sonra yazdığından menü
+  (ArcMenu/GMenu dizini izliyor) arada boş dosyayı okuyup NULL
+  uygulama bilgisiyle çöktü.
+→ DÜZELTME: .desktop aynı dizinde gizli geçici dosyaya (`.postacim.XXXXXX`,
+  .desktop uzantısız → menü yok sayar) yazılıp `mv` ile atomik konur;
+  içerik aynıysa dosyaya ve update-desktop-database'e hiç
+  dokunulmaz. Gereksiz ikinci `chmod +x "$BASLATICI"` kaldırıldı.
+  Sahte dizinde 3 durum denendi (ilk yazım / aynı içerik / değişen
+  içerik); run_all.sh geçti.
+
+## Kandilli deprem göstergesi (2026-11-26)
+
+**Talep:** "kandilli-quake eklentisini postacim'da kullanmak istiyorum. hava
+durumunun sol tarafında 4.0 üzeri depremi göstermek istiyorum. panele
+tıkladığında meteoroloji eklentisinde olduğu gibi bugün olan en büyük deprem
+ve bugün en çok deprem olan bölgeler ve en büyük değerini göstermek
+istiyorum." → Kararlar: panelde en yeni ≥4.0 deprem; ≥4.0 yokken soluk
+"Deprem yok (≥4.0)"; 5 dakikada bir yenileme.
+
+### Yeni modül `postacim/kandilli.py`
+- `depremler()`: `http://www.koeri.boun.edu.tr/scripts/lst0.asp`
+  (HTTPS yok) → windows-1254 çözümü + virgül→nokta → `<pre>` satır
+  ayrıştırma (ML→Mw→MD yedeği, "-.-" atlanır, ml>10 saçılır sayılır,
+  yalnız bugünkü satırlar). GNOME kandilli-quake eklentisiyle aynı kurallar.
+- `konum_anahtari`: "KOY-ILCE (IL)" → "ILCE (IL)", "KOY-(IL)" →
+  "MERKEZ (IL)"; tire içermeyen adlar olduğu gibi.
+- `konum_istatistikleri(depremler, en_cok=10)`: konum başına sayı + en
+  yüksek ML; çoktan aza, eşitlikte büyüklüğe göre sıralı.
+
+### Değişiklikler (`ui.py`)
+- Üst çubuk: `deprem_paneli` hava panelinin **solunda** (pack sırası).
+  ≥4.0 varken "⚠ 4.3 KIZILKOY-MILAS (MUGLA)" + "19:19 • en büyük ML 5.2"
+  (en yeni = tarih+saat en büyüğü); yokken soluk "🌍 Deprem yok (≥4.0)" +
+  "bugün N küçük deprem" (boşta "bugün kayıt yok").
+- `_deprem_yenile` (5 dk, açılışta 3.5 sn'de) + `_deprem_cek` (her hata
+  `deprem_hata` turuna düşer — **RequestException asla `_arka_plan`'ın
+  giriş penceresi yoluna çıkmaz**) + `_deprem_uygula` + `_deprem_pencere`
+  (günün en büyüğü, konum istatistikleri, ML 4.0+ listesi, kaynak satırı;
+  Yenile/Kapat/Esc; veri yokken bilgilendirme).
+- `_sonuc_isle`'e "deprem" / "deprem_hata" dalları (hata yalnız durum
+  çubuğunda, panel bozulmaz).
+
+### Testler
+- `tests/kandilli_test.py` (yeni, çevrimdışı + Xvfb; run_all.sh'a eklendi):
+  ayrıştırma (tarih süzgeci, Mw/MD yedeği, yer kesme), konum anahtarı,
+  istatistik sıralaması/sınırı, windows-1254+virgül (sahte istek), ağ
+  hatası → deprem_hata (giriş penceresi AÇILMAZ), panel konumu (rootx
+  hava < deprem değil: deprem solda), en yeni ≥4.0 gösterimi, boş hâller,
+  ayrıntı penceresi içeriği — 34 denetim.
+- `run_all.sh`: 28 test — hepsi geçti.
+- Önizleme (Xvfb): `~/kandilli-onizleme-panel.png` (panel + hava yan yana,
+  mavi tema) ve `~/kandilli-onizleme-pencere.png`. Önizleme sırasında
+  zamanlayıcı **gerçek** Kandilli + MGM verisini de çekti (canlı ağ yolu
+  doğrulandı; o an ≥4.0 yoktu → "Deprem yok" durumu gerçek veriyle görüldü).
+
+## Deprem panelinde eklenti ikonları (2026-11-26)
+
+**Talep:** "bundaki dünya ikonunu kaldır. eklentideki ikonları kullanalım."
+
+### Değişiklikler
+- **`tools/deprem_ikon_olustur.py`** (yeni): kandilli-quake eklentisinin
+  büyüklüğe göre seçtiği GTK tema ikonlarının Tk karşılıkları — Tk GTK tema
+  ikonunu okuyamadığından Pillow ile benzerleri çizildi (18×18, 4× ölçek):
+  `deprem_dusuk.png` (bilgi dairesi, mavi), `deprem_orta.png` (uyarı
+  üçgeni, amber), `deprem_yuksek.png` (önemli rozeti, kırmızı).
+- **`ui.py → _deprem_uygula`:** 🌍/⚠ emojileri kaldırıldı; ikon **eklenti
+  kuralıyla** günün en büyüğüne göre seçilir: ML≥6 → yuksek, ML≥5 → orta,
+  aksi → dusuk ("Deprem yok"ta da bilgi ikonu). Panel metinleri
+  "4.3 KIZILKOY-MILAS (MUGLA)" / "Deprem yok (≥4.0)".
+- Panel başlığı `image=` + `compound="left"` ile kuruldu.
+- **Test notu:** `ttk.Label.cget("image")` tek elemanlı **demet** döndürüyor
+  (`('pyimage1',)`) — test karşılaştırması `panel_simgesi()` yardımcısıyla.
+- `kandilli_test.py`'ye ikon kuralı denetimleri (orta/yuksek/dusuk +
+  emoji yok) — 37 denetim; `run_all.sh` 28/28 geçti.
+- Yerel kopyaya uygulandı; **bayat `build/lib` çıktısı eski ui.py'yi
+  kuruyordu** → `rm -rf build/ postacim.egg-info/` sonrası temiz kurulum
+  (kur.sh'taki temizlik kuralının pip install . yolu için de gerekliliği
+  bir kez daha doğrulandı). Sürüm 0.1.39 değişmedi (kural 10).
+
+## Deprem panelinde uzun yer adı kısaltması (2026-11-26)
+
+**Talep:** "depremin olduğu yer belirli bir karakter sayısından fazla ise o
+karakter sayısından sonrasını gösterme onun yerine ... koy"
+
+### Değişiklikler (`ui.py`)
+- `DEPREM_YER_UZUNLUK = 20` sabiti (dosya başında, diğer sabitlerle):
+  `_deprem_uygula` panel metninde yer adını 20 karakteri aşarsa
+  `yer[:20].rstrip() + "..."` ile kısaltır — "4.3 KIZILKOY-MILAS (MUGL...".
+- Ayrıntı penceresinde (genişlik var) tam ad yazılmaya devam eder.
+- `kandilli_test.py`: sınır denetimleri (20 karakterli ad kırpılmaz,
+  21 karakterli kırpılır) + mevcut ≥4.0 denetimi kısaltılmış ada güncellendi
+  — 40 denetim; `run_all.sh` 28/28 geçti.
+- Yerel kopyaya uygulandı (build/ temizliğiyle, sürüm sabit — kural 10).
+
+## Deprem ayrıntı penceresinde ikonlar (2026-11-26)
+
+**Talep:** "deprem ayrıntı penceresini biraz ikonlar ile süsleyelim çok
+sade duruyor"
+
+### Değişiklikler
+- **`tools/deprem_ikon_olustur.py`** genişletildi: 18×18'in yanına
+  **48×48 varyantlar** (`deprem_*_48.png`, özet bloğu için) ve **konum
+  pini** (`deprem_konum.png`, daire+sivri uç, ortası şeffaf — alpha
+  maske ile) eklendi.
+- **`ui.py → _deprem_pencere`:**
+  - Özet bloğu: "ML 5.2" satırının başına **günün en büyüğüne göre 48px
+    ikon** gömülüyor (`metin.image_create`; eşikler panel kuralıyla aynı:
+    ML≥6 yuksek, ML≥5 orta, aksi dusuk).
+  - "En çok deprem olan konumlar" başlığına pin ikonu; "ML 4.0 ve üzeri"
+    başlığına uyarı (liste doluyken) / bilgi (boşken) ikonu.
+  - Verisiz durum bilgilendirmesine de 48px bilgi ikonu.
+  - `ikon_ekle` yardımcısı; `self.ikon` referansları kalıcı olduğu için
+    gömülü resimler GC ile kaybolmaz.
+- Başlıklardaki "— ... —" çizgileri ikonlarla değişti; metin denetimleri
+  aynen geçiyor. `kandilli_test.py`'ye `metin.image_names()` ≥ 3 denetimi
+  eklendi — 41 denetim; `run_all.sh` 28/28 geçti.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).

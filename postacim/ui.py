@@ -37,6 +37,7 @@ except ImportError:
 from .config import Ayarlar, KisiDefteri
 from . import dosya_secici
 from . import guncelleme
+from . import kandilli
 from . import meteoroloji
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
@@ -65,6 +66,10 @@ from .imap import ImapIstemci, SIRA
 
 UYGULAMA_ADI = "Postacım"
 YAZI_TIPİ = "Ubuntu"  # sistemde yoksa Tk varsaylanına düşer
+
+# Deprem panelinde yer adı en fazla bu kadar karakterle gösterilir;
+# uzunsa kırılıp "..." eklenir (ayrıntı penceresinde tam ad yazılır).
+DEPREM_YER_UZUNLUK = 20
 
 # Takvim görünümü stilleri (Ay|Hafta|Gün) — Ayarlar penceresinden değiştirilir.
 # Değerler hesap.json → "takvim_stil" altında saklanır; eksik anahtar buradan.
@@ -569,6 +574,7 @@ class Postacim(tk.Tk):
         self._gövde_html_anahtar = None  # HTML'de görünen ileti+tür anahtarı
         self._orijinal_gomuler: dict = {}  # resim adresi → data: URI (önbellek)
         self._hava_veri = None         # (il, ilce, merkez, sondurum, tahmin)
+        self._deprem_veri = None       # bugünkü Deprem listesi (kandilli.py)
 
         # Tema widget'lar kurulmadan uygulanmali
         self.style = ttk.Style(self)
@@ -976,6 +982,24 @@ class Postacim(tk.Tk):
         self.hava_ayrinti.pack(anchor="w")
         for _w in (self.hava_paneli, self.hava_baslik, self.hava_ayrinti):
             _w.bind("<Button-1>", lambda _e: self._hava_pencere())
+            _w.configure(cursor="hand2")
+        # Kandilli deprem paneli: hava panelinin SOLUNA düşer (pack sırası).
+        # Bugün 4.0 üzeri deprem varken en yenisini, yokken soluk
+        # "deprem yok" yazar; tıklayınca ayrıntı penceresi açılır.
+        # İkon eklenti kuralına göre günün en büyüğüne göre seçilir
+        # (ML<5 bilgi, ML≥5 uyarı, ML≥6 önemli).
+        self.deprem_paneli = ttk.Frame(cubuk)
+        self.deprem_paneli.pack(side="right", padx=(12, 0))
+        self.deprem_baslik = ttk.Label(
+            self.deprem_paneli, text="Deprem —",
+            image=self.ikon["deprem_dusuk"], compound="left")
+        self.deprem_baslik.pack(anchor="w")
+        self.deprem_ayrinti = ttk.Label(
+            self.deprem_paneli, text="", font=(YAZI_TIPİ, 8))
+        self.deprem_ayrinti.pack(anchor="w")
+        for _w in (self.deprem_paneli, self.deprem_baslik,
+                   self.deprem_ayrinti):
+            _w.bind("<Button-1>", lambda _e: self._deprem_pencere())
             _w.configure(cursor="hand2")
 
     def _gövde_kur(self):
@@ -3183,6 +3207,11 @@ class Postacim(tk.Tk):
             if getattr(self, "ayarlar_penceresi", None) and \
                     self.ayarlar_penceresi.winfo_exists():
                 self.ayarlar_penceresi.hava_ilceler_doldur(veri[1], veri[2])
+        elif tur == "deprem":
+            self._deprem_uygula(veri[1])
+        elif tur == "deprem_hata":
+            # Sessiz: deprem verisi açılışı engellememeli; panel nötr kalır
+            self.durum.set(f"Deprem verisi alınamadı: {veri[2]}")
         elif tur == "guncelleme_durum":
             self.durum.set(veri[1])
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
@@ -3274,6 +3303,8 @@ class Postacim(tk.Tk):
         self._otomatik_baslat()
         # Hava durumu göstergesi (MGM): açılışta bir kez, sonra 30 dk'da bir
         self.after(1500, self._hava_yenile)
+        # Kandilli deprem göstergesi: 5 dk'da bir (hava ile çakışmasın)
+        self.after(3500, self._deprem_yenile)
         # Karşılama, klasör listesi gelmezse de birkaç saniyede kapansın
         self.after(4000, self._karsilama_kapat)
 
@@ -3551,6 +3582,163 @@ class Postacim(tk.Tk):
         alt = ttk.Frame(pencere)
         alt.pack(fill="x", pady=(0, 8))
         ttk.Button(alt, text="Yenile", command=self._hava_yenile).pack(
+            side="left", padx=10)
+        ttk.Button(alt, text="Kapat", command=pencere.destroy).pack(side="left")
+        pencere.bind("<Escape>", lambda e: pencere.destroy())
+
+    # ------------------------------------------------------------------ depremler (Kandilli)
+
+    def _deprem_yenile(self):
+        """Kandilli'den bugünkü depremleri çeker; 5 dakikada bir yeniler."""
+        threading.Thread(
+            target=self._arka_plan, args=(self._deprem_cek,), daemon=True
+        ).start()
+        try:
+            self.after(5 * 60 * 1000, self._deprem_yenile)
+        except tk.TclError:
+            pass
+
+    def _deprem_cek(self):
+        """Kandilli verisini çeker; hata açılış/oturumu bozmamalı (sessiz)."""
+        try:
+            return ("deprem", kandilli.depremler())
+        except Exception as exc:
+            return ("deprem_hata", None, f"{type(exc).__name__}: {exc}")
+
+    def _deprem_uygula(self, depremler):
+        """Çekilen listeyi panele yazar: en yeni ≥4.0 deprem + özet."""
+        self._deprem_veri = depremler
+        try:
+            if not (getattr(self, "deprem_paneli", None) and
+                    self.deprem_paneli.winfo_exists()):
+                return
+            _, on = self._tema_renkleri()
+            # İkon kuralı kandilli-quake eklentisinden: günün en büyüğüne
+            # göre (ML≥6 önemli, ML≥5 uyarı, aksi bilgi).
+            en_buyuk = max((d.ml for d in depremler), default=0.0)
+            if en_buyuk >= 6.0:
+                simge = self.ikon["deprem_yuksek"]
+            elif en_buyuk >= 5.0:
+                simge = self.ikon["deprem_orta"]
+            else:
+                simge = self.ikon["deprem_dusuk"]
+            buyuk = [d for d in depremler if d.ml >= 4.0]
+            if buyuk:
+                son = max(buyuk, key=lambda d: d.tarih + " " + d.saat)
+                yer = son.yer
+                if len(yer) > DEPREM_YER_UZUNLUK:
+                    yer = yer[:DEPREM_YER_UZUNLUK].rstrip() + "..."
+                self.deprem_baslik.configure(
+                    image=simge, compound="left",
+                    text=f"{son.ml:.1f} {yer}", foreground=on)
+                self.deprem_ayrinti.configure(
+                    text=f"{son.saat[:5]} • en büyük ML {en_buyuk:.1f}")
+            elif depremler:
+                self.deprem_baslik.configure(
+                    image=simge, compound="left",
+                    text="Deprem yok (≥4.0)", foreground="#777777")
+                self.deprem_ayrinti.configure(
+                    text=f"bugün {len(depremler)} küçük deprem")
+            else:
+                self.deprem_baslik.configure(
+                    image=simge, compound="left",
+                    text="Deprem yok (≥4.0)", foreground="#777777")
+                self.deprem_ayrinti.configure(text="bugün kayıt yok")
+        except tk.TclError:
+            pass
+
+    def _deprem_pencere(self):
+        """Kandilli ayrıntı penceresi: günlük özet + konumlar + ML 4+ listesi."""
+        arka, on = self._tema_renkleri()
+        pencere = tk.Toplevel(self)
+        pencere.title("Depremler — Kandilli")
+        pencere.geometry("470x620")
+        pencere.transient(self)
+        self._pencere_simgesi(pencere)
+        pencere.configure(bg=arka)
+        metin = tk.Text(
+            pencere, wrap="word", padx=14, pady=10, relief="flat",
+            bg=arka, fg=on, insertbackground=on, font=(YAZI_TIPİ, 11),
+            state="disabled", cursor="arrow",
+        )
+        kaydirma = ttk.Scrollbar(pencere, orient="vertical", command=metin.yview)
+        metin.configure(yscrollcommand=kaydirma.set)
+        kaydirma.pack(side="right", fill="y")
+        metin.pack(side="left", fill="both", expand=True)
+        metin.tag_configure("baslik", font=(YAZI_TIPİ, 13, "bold"))
+        metin.tag_configure("buyuk", font=(YAZI_TIPİ, 24, "bold"))
+        metin.tag_configure("soluk", foreground="#777777")
+        metin.tag_configure("bolge", font=(YAZI_TIPİ, 10, "bold"))
+        metin.tag_configure("kaynak", foreground="#777777",
+                            font=(YAZI_TIPİ, 8))
+
+        def ekle(parca, tag="", son="\n"):
+            metin.configure(state="normal")
+            metin.insert("end", parca + son, tag)
+            metin.configure(state="disabled")
+
+        def ikon_ekle(ad, bosluk=" "):
+            """Metnin sonuna gömülü ikon ekler (self.ikon referansları kalıcı)."""
+            resim = self.ikon.get(ad)
+            if resim is None:
+                return
+            metin.configure(state="normal")
+            metin.image_create("end", image=resim)
+            metin.insert("end", bosluk)
+            metin.configure(state="disabled")
+
+        veri = self._deprem_veri
+        if not veri:
+            metin.configure(state="normal")
+            resim = self.ikon.get("deprem_dusuk_48")
+            if resim:
+                metin.image_create("end", image=resim)
+                metin.insert("end", "\n\n")
+            metin.insert("end", "Deprem verisi henüz alınamadı.\n\n"
+                         "Bağlantıyı kontrol edip pencereyi yeniden "
+                         "açabilirsiniz.")
+            metin.configure(state="disabled")
+            ttk.Button(pencere, text="Kapat", command=pencere.destroy).pack(
+                pady=8)
+            return
+
+        en_buyuk = max(veri, key=lambda d: d.ml)
+        ekle("Kandilli Rasathanesi — bugün", "baslik", "\n\n")
+        # Günün en büyüğüne göre büyük ikon (panel kuralıyla aynı eşikler)
+        ikon_ozet = ("deprem_yuksek_48" if en_buyuk.ml >= 6.0 else
+                     "deprem_orta_48" if en_buyuk.ml >= 5.0 else
+                     "deprem_dusuk_48")
+        ikon_ekle(ikon_ozet, bosluk="  ")
+        ekle(f"ML {en_buyuk.ml:.1f}", "buyuk", "\n")
+        ekle(f"{en_buyuk.yer}", "baslik", "\n")
+        ekle(f"{en_buyuk.tarih} {en_buyuk.saat} • bugün {len(veri)} deprem",
+             "soluk", "\n\n")
+
+        konumlar = kandilli.konum_istatistikleri(veri)
+        if konumlar:
+            ikon_ekle("deprem_konum", bosluk=" ")
+            ekle("En çok deprem olan konumlar", "baslik", "\n")
+            for i, konum in enumerate(konumlar, 1):
+                ekle(f"{i:2}. {konum['ad']}", "bolge", "")
+                ekle(f" — {konum['sayi']} deprem, en yüksek ML "
+                     f"{konum['en_buyuk']:.1f}", "", "\n")
+            ekle("", "", "\n")
+
+        buyuk = [d for d in veri if d.ml >= 4.0]
+        ikon_ekle("deprem_orta" if buyuk else "deprem_dusuk", bosluk=" ")
+        ekle("ML 4.0 ve üzeri", "baslik", "\n")
+        if not buyuk:
+            ekle("Bugün 4.0 üzeri veri yok", "soluk", "\n")
+        else:
+            for d in buyuk:
+                ekle(f"{d.saat[:5]}  ML {d.ml:.1f} — {d.yer}", "", "\n")
+        ekle("", "", "\n")
+        ekle("Kaynak: Kandilli Rasathanesi (KOERI) • 5 dakikada bir yenilenir",
+             "kaynak", "\n")
+
+        alt = ttk.Frame(pencere)
+        alt.pack(fill="x", pady=(0, 8))
+        ttk.Button(alt, text="Yenile", command=self._deprem_yenile).pack(
             side="left", padx=10)
         ttk.Button(alt, text="Kapat", command=pencere.destroy).pack(side="left")
         pencere.bind("<Escape>", lambda e: pencere.destroy())
