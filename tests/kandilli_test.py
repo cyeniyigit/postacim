@@ -7,7 +7,8 @@ Kapsar:
   + virgül→nokta (sahte istekle)
 - arayüz: üst çubukta deprem paneli (hava panelinin solunda); kuyruk
   sonucu paneli günceller (en yeni ≥4.0 / "deprem yok" boş hâlleri);
-  ayrıntı penceresi içeriği; hata sonucu paneli bozmaz; ağ hatası
+  ayrıntı penceresi içeriği (özet + son deprem + konumlar + ≥4.0 listesi);
+  hata sonucu paneli bozmaz; ağ hatası
   giriş penceresi açmaz ("deprem_hata")
 
 Kullanim:  xvfb-run -a .venv/bin/python tests/kandilli_test.py
@@ -112,6 +113,24 @@ def panel_simgesi(uygulama):
     if isinstance(deger, (tuple, list)):
         deger = deger[0] if deger else ""
     return str(deger)
+
+
+def ayrinti_icerigi(uygulama):
+    """Ayrıntı penceresini açar, metin içeriğini döndürür ve pencereyi kapatır."""
+    uygulama._deprem_pencere()
+    pencere = None
+    for p in uygulama.winfo_children():
+        if isinstance(p, ui_mod.tk.Toplevel) and \
+                p.title() == "Depremler — Kandilli":
+            pencere = p
+    if pencere is None:
+        return None
+    icerik = ""
+    for cocuk in pencere.winfo_children():
+        if cocuk.winfo_class() == "Text":
+            icerik = cocuk.get("1.0", "end")
+    pencere.destroy()
+    return icerik
 
 
 def test_kandilli():
@@ -259,6 +278,12 @@ def main() -> int:
                         "ayrıntıda konum istatistikleri var")
                 kontrol("ML 4.0 ve üzeri" in icerik and "19:19" in icerik,
                         "ayrıntıda ≥4.0 listesi var")
+                kontrol("Son deprem" in icerik and "20:38" in icerik and
+                        "1.8" in icerik and
+                        "IKIZLI-SUNGURLU (CORUM)" in icerik,
+                        "ayrıntıda günün son (en yeni) depremi var")
+                kontrol(icerik.index("Son deprem") < icerik.index("En çok deprem"),
+                        "'Son deprem' bölümü konum listesinden önce")
                 kontrol("KOERI" in icerik, "kaynak bilgisi var")
                 resimler = metin.image_names()
                 kontrol(len(resimler) >= 3,
@@ -276,6 +301,14 @@ def main() -> int:
                 "'Deprem yok' durumunda bilgi ikonu")
         kontrol("bugün" in uygulama.deprem_ayrinti.cget("text"),
                 "ayrıntıda küçük deprem sayısı var")
+
+        # --- ayrıntı penceresi: ≥4.0 yokken de son deprem görünür ---
+        icerik = ayrinti_icerigi(uygulama)
+        kontrol(icerik is not None and
+                "Son deprem" in icerik and "20:38" in icerik and
+                "1.8" in icerik,
+                "≥4.0 yokken pencere yine de son depremi gösterir")
+
         uygulama._sonuc_isle(("deprem", []))
         kontrol("bugün kayıt yok" in uygulama.deprem_ayrinti.cget("text"),
                 "boş listede 'kayıt yok'")

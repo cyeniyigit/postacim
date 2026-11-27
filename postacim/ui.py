@@ -3714,6 +3714,14 @@ class Postacim(tk.Tk):
         ekle(f"{en_buyuk.tarih} {en_buyuk.saat} • bugün {len(veri)} deprem",
              "soluk", "\n\n")
 
+        # Günün en yeni depremi (büyüklüğü ne olursa olsun); paneldeki gibi
+        # tarih+saat birleşiminden bulunur (sayfadaki sıraya güvenilmez).
+        son = max(veri, key=lambda d: d.tarih + " " + d.saat)
+        ikon_ekle("deprem_dusuk", bosluk=" ")
+        ekle("Son deprem", "baslik", "\n")
+        ekle(f"{son.saat[:5]}  ML {son.ml:.1f} — {son.yer}", "", "\n")
+        ekle("", "", "\n")
+
         konumlar = kandilli.konum_istatistikleri(veri)
         if konumlar:
             ikon_ekle("deprem_konum", bosluk=" ")

@@ -3,6 +3,21 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.41] — 2026-11-27
+
+### Eklenen
+- **Deprem ayrıntı penceresinde "Son deprem" bölümü:** pencere artık
+  günün en yeni depremini (büyüklüğünden bağımsız) saat, büyüklük ve
+  yerle gösterir; özet bloğunun altında, konum listesinin üstünde
+  yer alır. En yeni deprem, paneldeki kuralın aynısı gibi tarih+saat
+  birleşiminden bulunur (sayfadaki sıraya güvenilmez). Böylece 4.0
+  üzeri deprem çıkmayan günlerde de en son olan deprem görünür.
+
+### Testler
+- `tests/kandilli_test.py` genişletildi (48 denetim): tam veride "Son
+  deprem" bölümünün yeri ve içeriği; ≥4.0 deprem yokken de pencerede
+  son depremin görünmesi. `run_all.sh` 28/28 geçti.
+
 ## [0.1.40] — 2026-11-26
 
 ### Eklenen

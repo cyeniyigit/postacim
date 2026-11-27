@@ -2277,3 +2277,28 @@ sade duruyor"
   aynen geçiyor. `kandilli_test.py`'ye `metin.image_names()` ≥ 3 denetimi
   eklendi — 41 denetim; `run_all.sh` 28/28 geçti.
 - Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Deprem ayrıntı penceresinde "Son deprem" bölümü (2026-11-27)
+
+**Talep:** "şimdi deprem ayrıntı panelinde son olan deprem gösterilmiyor
+bunu ekleyelim"
+
+### Sorun
+Ayrıntı penceresi günün en büyüğü + konum istatistikleri + ML 4.0+
+listesini gösteriyordu; günün EN YENİ depremi 4.0 altındaysa hiçbir
+yerde görünmüyordu (4.0+ listesine giremiyordu).
+
+### Değişiklikler (`ui.py → _deprem_pencere`)
+- Özet bloğunun altına, konum listesinin üstüne "Son deprem" bölümü:
+  bilgi ikonu + başlık + `saat[:5]  ML x.x — YER` satırı (≥4.0 liste
+  satır biçimiyle aynı).
+- En yeni deprem `max(veri, key=tarih+saat)` ile bulunur — paneldeki
+  "en yeni ≥4.0" kuralının aynısı; sayfadaki sıraya güvenilmez.
+- Büyüklük eşiği yok: ML 1.8 de olsa günün en yeni depremi görünür.
+
+### Testler
+- `kandilli_test.py`: `ayrinti_icerigi()` yardımcısı; tam veride "Son
+  deprem" bölümü (20:38 / ML 1.8 / IKIZLI-SUNGURLU) + konum
+  listesinden önce olduğu denetimi; ≥4.0 yokken de pencerede son
+  depremin göründüğü denetimi — 48 denetim; `run_all.sh` 28/28 geçti.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
