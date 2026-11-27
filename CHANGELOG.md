@@ -3,6 +3,21 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.42] — 2026-11-27
+
+### Değiştirilen
+- **Üst çubuk deprem paneli en yeni depremi gösterir:** hava durumu
+  panelinin yanındaki gösterge artık yalnızca en yeni ≥4.0 depremi
+  değil, günün en yeni depremini büyüklük eşiği olmaksızın yazıyor
+  (ayrıntı penceresindeki "Son deprem" kuralıyla aynı). Alt satır
+  saat + günün en büyüğünü vermeye devam eder; ikon günün en
+  büyüğüne göre seçilir (ML≥6 önemli, ML≥5 uyarı, aksi bilgi).
+  "Deprem yok" artık yalnız gün hiç deprem yokken görünür.
+
+### Testler
+- `tests/kandilli_test.py` panel denetimleri yeni kurala göre
+  güncellendi (49 denetim); `run_all.sh` 28/28 geçti.
+
 ## [0.1.41] — 2026-11-27
 
 ### Eklenen

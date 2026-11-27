@@ -6,7 +6,8 @@ Kapsar:
   yer ayırma), konum anahtarı, konum istatistikleri, windows-1254 çözümleme
   + virgül→nokta (sahte istekle)
 - arayüz: üst çubukta deprem paneli (hava panelinin solunda); kuyruk
-  sonucu paneli günceller (en yeni ≥4.0 / "deprem yok" boş hâlleri);
+  sonucu paneli günceller (en yeni deprem — eşik yok — / "deprem yok"
+  boş hâlleri);
   ayrıntı penceresi içeriği (özet + son deprem + konumlar + ≥4.0 listesi);
   hata sonucu paneli bozmaz; ağ hatası
   giriş penceresi açmaz ("deprem_hata")
@@ -237,20 +238,20 @@ def main() -> int:
                 uygulama.hava_paneli.winfo_rootx(),
                 "deprem paneli hava panelinin solunda")
 
-        # --- kuyruk sonucu: en yeni ≥4.0 deprem gösterilir ---
+        # --- kuyruk sonucu: en yeni deprem gösterilir (eşik yok) ---
         liste = kandilli.ayristir(SAYFA.replace(",", "."), bugun=BUGUN)
         uygulama._sonuc_isle(("deprem", liste))
         metin = uygulama.deprem_baslik.cget("text")
-        kontrol("4.3" in metin and "KIZILKOY-MILAS (MUGL..." in metin and
-                "KIZILKOY-MILAS (MUGLA)" not in metin and
+        kontrol("1.8" in metin and "IKIZLI-SUNGURLU (COR..." in metin and
+                "IKIZLI-SUNGURLU (CORUM)" not in metin and
                 "🌍" not in metin and "⚠" not in metin,
-                f"panel en yeni ≥4.0 depremi kısaltılmış yerle gösterir "
-                 f"({metin!r})")
+                f"panel en yeni depremi kısaltılmış yerle gösterir "
+                f"({metin!r})")
         kontrol(panel_simgesi(uygulama) ==
                 str(uygulama.ikon["deprem_orta"]),
                 "günün en büyüğü ML 5.2 → orta (uyarı) ikonu")
         ayrinti = uygulama.deprem_ayrinti.cget("text")
-        kontrol("19:19" in ayrinti and "5.2" in ayrinti,
+        kontrol("20:38" in ayrinti and "5.2" in ayrinti,
                 f"ayrıntı satırı saat + en büyüğü verir ({ayrinti!r})")
 
         # --- ayrıntı penceresi ---
@@ -290,17 +291,19 @@ def main() -> int:
                         f"pencerede süs ikonları gömülü ({len(resimler)})")
             pencere.destroy()
 
-        # --- boş hâl: bugün ≥4.0 yok ---
+        # --- boş hâl: bugün ≥4.0 yokken de en yeni deprem görünür ---
         kucukler = [d for d in liste if d.ml < 4.0]
         uygulama._sonuc_isle(("deprem", kucukler))
         metin = uygulama.deprem_baslik.cget("text")
-        kontrol("Deprem yok" in metin and "🌍" not in metin,
-                f"≥4.0 yokken panel 'Deprem yok' yazar, emoji yok ({metin!r})")
+        kontrol("1.8" in metin and "IKIZLI-SUNGURLU (COR..." in metin,
+                f"≥4.0 yokken panel en yeni küçük depremi gösterir "
+                f"({metin!r})")
         kontrol(panel_simgesi(uygulama) ==
                 str(uygulama.ikon["deprem_dusuk"]),
-                "'Deprem yok' durumunda bilgi ikonu")
-        kontrol("bugün" in uygulama.deprem_ayrinti.cget("text"),
-                "ayrıntıda küçük deprem sayısı var")
+                "günün en büyüğü <5 → bilgi ikonu")
+        kontrol("20:38" in uygulama.deprem_ayrinti.cget("text") and
+                "2.7" in uygulama.deprem_ayrinti.cget("text"),
+                "ayrıntıda saat + günün en büyüğü var")
 
         # --- ayrıntı penceresi: ≥4.0 yokken de son deprem görünür ---
         icerik = ayrinti_icerigi(uygulama)
@@ -312,6 +315,8 @@ def main() -> int:
         uygulama._sonuc_isle(("deprem", []))
         kontrol("bugün kayıt yok" in uygulama.deprem_ayrinti.cget("text"),
                 "boş listede 'kayıt yok'")
+        kontrol("Deprem yok" in uygulama.deprem_baslik.cget("text"),
+                "boş listede 'Deprem yok'")
 
         # --- ikon kuralı (eklenti): ML≥6 önemli, ML≥5 uyarı, aksi bilgi ---
         uygulama._sonuc_isle(("deprem", [kandilli.Deprem(
@@ -324,7 +329,7 @@ def main() -> int:
         kontrol(panel_simgesi(uygulama) ==
                 str(uygulama.ikon["deprem_dusuk"]) and
                 "4.4" in uygulama.deprem_baslik.cget("text"),
-                "günün en büyüğü ML<5 → bilgi ikonu, ≥4.0 metni")
+                "günün en büyüğü ML<5 → bilgi ikonu, en yeni deprem metni")
 
         # --- yer adı kısaltması (DEPREM_YER_UZUNLUK = 20) ---
         uygulama._sonuc_isle(("deprem", [kandilli.Deprem(

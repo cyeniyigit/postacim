@@ -984,8 +984,8 @@ class Postacim(tk.Tk):
             _w.bind("<Button-1>", lambda _e: self._hava_pencere())
             _w.configure(cursor="hand2")
         # Kandilli deprem paneli: hava panelinin SOLUNA düşer (pack sırası).
-        # Bugün 4.0 üzeri deprem varken en yenisini, yokken soluk
-        # "deprem yok" yazar; tıklayınca ayrıntı penceresi açılır.
+        # Bugünün en yeni depremini, yokken soluk "deprem yok" yazar;
+        # tıklayınca ayrıntı penceresi açılır.
         # İkon eklenti kuralına göre günün en büyüğüne göre seçilir
         # (ML<5 bilgi, ML≥5 uyarı, ML≥6 önemli).
         self.deprem_paneli = ttk.Frame(cubuk)
@@ -3606,7 +3606,7 @@ class Postacim(tk.Tk):
             return ("deprem_hata", None, f"{type(exc).__name__}: {exc}")
 
     def _deprem_uygula(self, depremler):
-        """Çekilen listeyi panele yazar: en yeni ≥4.0 deprem + özet."""
+        """Çekilen listeyi panele yazar: günün en yeni depremi + özet."""
         self._deprem_veri = depremler
         try:
             if not (getattr(self, "deprem_paneli", None) and
@@ -3622,9 +3622,11 @@ class Postacim(tk.Tk):
                 simge = self.ikon["deprem_orta"]
             else:
                 simge = self.ikon["deprem_dusuk"]
-            buyuk = [d for d in depremler if d.ml >= 4.0]
-            if buyuk:
-                son = max(buyuk, key=lambda d: d.tarih + " " + d.saat)
+            # Günün EN YENİ depremi (büyüklüğü ne olursa olsun), hava
+            # panelinin yanında; ayrıntı penceresindeki "Son deprem"
+            # kuralının aynısı: tarih+saat birleşiminden bulunur.
+            if depremler:
+                son = max(depremler, key=lambda d: d.tarih + " " + d.saat)
                 yer = son.yer
                 if len(yer) > DEPREM_YER_UZUNLUK:
                     yer = yer[:DEPREM_YER_UZUNLUK].rstrip() + "..."
@@ -3633,16 +3635,10 @@ class Postacim(tk.Tk):
                     text=f"{son.ml:.1f} {yer}", foreground=on)
                 self.deprem_ayrinti.configure(
                     text=f"{son.saat[:5]} • en büyük ML {en_buyuk:.1f}")
-            elif depremler:
-                self.deprem_baslik.configure(
-                    image=simge, compound="left",
-                    text="Deprem yok (≥4.0)", foreground="#777777")
-                self.deprem_ayrinti.configure(
-                    text=f"bugün {len(depremler)} küçük deprem")
             else:
                 self.deprem_baslik.configure(
                     image=simge, compound="left",
-                    text="Deprem yok (≥4.0)", foreground="#777777")
+                    text="Deprem yok", foreground="#777777")
                 self.deprem_ayrinti.configure(text="bugün kayıt yok")
         except tk.TclError:
             pass

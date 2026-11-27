@@ -2302,3 +2302,24 @@ yerde görünmüyordu (4.0+ listesine giremiyordu).
   listesinden önce olduğu denetimi; ≥4.0 yokken de pencerede son
   depremin göründüğü denetimi — 48 denetim; `run_all.sh` 28/28 geçti.
 - Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Üst çubuk panelinde en yeni deprem (2026-11-27)
+
+**Talep:** "burada main de hava durumunun yanında son deprem gösterilmeli
+aslında"
+
+### Değişiklikler (`ui.py → _deprem_uygula`)
+- Panel yalnız en yeni ≥4.0 depremi gösteriyordu; ≥4.0 yoksa
+  "Deprem yok (≥4.0)" yazıyordu. Artık günün EN YENİ depremini
+  büyüklük eşiği olmaksızın yazar (ayrıntı penceresindeki "Son
+  deprem" kuralının aynısı: max(tarih+saat)).
+- Alt satır "saat • en büyük ML x.x" biçimini korur; ikon günün en
+  büyüğüne göre seçilir (ML≥6 önemli, ML≥5 uyarı, aksi bilgi).
+- "Deprem yok" yalnız gün hiç deprem yokken.
+
+### Testler
+- `kandilli_test.py` panel denetimleri güncellendi: tam veride en
+  yeni (1.8) gösterilir; ≥4.0 yokken de en yeni küçük deprem
+  görünür; boş listede "Deprem yok" + "bugün kayıt yok" — 49
+  denetim; `run_all.sh` 28/28 geçti.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
