@@ -24,7 +24,8 @@ ESKI_ANAHTARLAR = ("sunucu", "kullanici", "parola", "yontem", "son_klasor")
 GLOBAL_ANAHTARLAR = (
     "tema", "otomatik_yenile", "klasor_ebeveyn", "son_arama", "takvim_gorunum",
     "takvim_stil", "tamamlanan_randevular", "hatirlatici_dakika",
-    "posta_kurallari",
+    "posta_kurallari", "haber_kaynaklari", "haber_yazi_tipi",
+    "haber_yazi_boyutu",
 )
 
 # Yeni hesap için varsayılanlar (tür bazlı)

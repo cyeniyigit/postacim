@@ -2323,3 +2323,127 @@ aslında"
   görünür; boş listede "Deprem yok" + "bugün kayıt yok" — 49
   denetim; `run_all.sh` 28/28 geçti.
 - Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Gazete haberleri sekmesi (2026-11-27)
+
+**Talep:** "gazetelerden haber göstermek istiyorum. hurriyet.com.tr,
+sabah.com.tr vb gibi. kullanıcı haberlerini görmek istediği site
+adresini girecek. oradan haberler çekilecek. Takvimin yanında yeni bir
+tab sekmesinde haberler gösterilecek"
+
+### Canlı doğrulama (tahmin yok)
+- hurriyet.com.tr: RSS 2.0 (200) — ana sayfada keşif bağlantısı YOK,
+  besleme /rss/anasayfa/ ✓
+- sabah.com.tr: RSS 2.0 (200) — ana sayfada <link rel=alternate> keşfi ✓
+
+### Kullanıcı kararları
+- Haberler uygulamada okunacak; resim/video KULLANICIYA SORARAK
+  indirilip gösterilecek.
+- Liste düzeni: tek liste + kaynak sütunu.
+
+### Değişiklikler
+- **`postacim/haberler.py` (yeni):** besleme keşfi (doğrudan besleme
+  adresi → `<link rel=alternate>` keşfi → yaygın yollar /rss,
+  /rss.xml, /rss/anasayfa/, /rss/anasayfa.xml …), RSS 2.0 + Atom
+  ayrıştırma (ElementTree), medya adresleri (media:content,
+  media:thumbnail, enclosure, açıklamadaki ilk <img>) — indirme
+  yapılmaz, yalnız adres; medya_indir (25 MB sınır, akışlı),
+  tarih_coz (RFC 822 + ISO), metin_temizle, sirala.
+- **`config.py`:** "haber_kaynaklari" GLOBAL_ANAHTARLAR'a eklendi.
+- **`ui.py`:** üçüncü sekme "📰 Haberler"; üst araç (site adresi
+  girişi + Site Ekle + Kaynak Sil + Yenile); dikey paned: üstte tek
+  liste (Saat | Kaynak | Başlık), altta okuyucu (başlık, kaynak•tarih,
+  özet). Medya sor satırı PanedWindow'dan ÖNCE alttan paketlenir
+  (aksi hâlde paned alanı yutup satır eşlenmiyordu — sayfalama çubuğu
+  dersi). Resim onayla indirilip okuyucuya gömülür (genişliğe
+  sığdırılır); video geçici dosyaya indirilip xdg-open ile sistem
+  oynatıcısında açılır; "Tarayıcıda aç" tam makale için.
+  _sekme_degisti artık 3 sekleyi bilir; haber sekmesi açıkken 15
+  dk'da bir otomatik tazeleme.
+- **`tests/haber_test.py` (yeni, 39 denetim)** + run_all.sh'e eklendi —
+  29/29 geçti.
+- Canlı doğrulama: Hürriyet 69 haber (69 resimli), Sabah 10 haber;
+  her iki sitede otomatik keşif ✓.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Haberler: kaynak ekleme penceresi + gazete filtresi (2026-11-27)
+
+**Talep:** "kaynak ekleme kısmı çok güyk olmuş. gazetelere filitreleme de
+yapabilmeliyim. kaynak ekleme için bir buton koy, tıklanınca açılan
+formda gazetenin adı ve url adresi alınsın. ekleme kısmını kaldır,
+yerine dropdown koy, istediğim gazeteyi seçebilmeliyim."
+
+### Değişiklikler (`ui.py → _haberler_kur` ve yurdum)
+- Araç satırındaki site adresi girişi + "Site Ekle" KALDIRILDI. Yerine:
+  - **Kaynak combobox'ı** ("Tümü" + kaynak adları; readonly): seçilen
+    gazeteye istemci tarafı filtre (`_haberler_listeyi_doldur`,
+    iid tam liste indeksine eşli — okuyucu bozulmaz).
+  - **Kaynak Ekle** düğmesi → "Haber Kaynağı Ekle" penceresi: Gazete
+    adı (isteğe bağlı; boşsa besleme başlığı) + Site adresi; Ekle ile
+    besleme keşfi arka planda. Enter=Ekle, Esc=İptal.
+  - Kaynak Sil (onaylı) + Yenile aynen; silinen kaynak combobox'tan
+    düşer, filtre "Tümü"ye döner.
+- `_haberler_bos_goster` ileti metni yeni düğmeye göre güncellendi.
+- `_haberler_uygula` bölündü: combobox güncelleme + listeyi doldurma
+  ayrı yöntemler; filtre tazelemede korunur.
+
+### Testler
+- `haber_test.py`: pencere akışı (ad+url girişi, Ekle), combobox
+  dolumu/otomatik seçim, filtre denemeleri (kaynağa süzme/Tümü),
+  silince combobox düşüşü — 48 denetim; `run_all.sh` 29/29 geçti.
+  Not: pencere düğmeleri alt çerçevede olduğundan test alt düğümleri
+  dolaşarak bulur.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Haberler: okuyucuda haberin TAMAMI (2026-11-27)
+
+**Talep:** "haberin açıklamasında devamı için tıklayınız diyor. halbuki
+o bölgede haberin tamamını görmeliydim"
+
+### Canlı doğrulama (tahmin yok)
+- Hürriyet + Sabah beslemeleri content:encoded İÇERMİYOR; description
+  kısa tanıtım (Sabah'ta "SON DAKİKA | … devamı" biçimi). Tam metin için
+  makale sayfasından ayıklama gerekiyor.
+- Sayfa yapıları: Hürriyet gövde <div class="news-content">, Sabah
+  <div class="newsDetailText">; ikisinde de makale <p> paragraflarında.
+
+### Değişiklikler
+- **`haberler.py`:** `_MakaleAyristirici` (HTMLParser) + makale_ayristir
+  + makale_cek: ad/class'ı makale gövdesine işaret eden kaplarda
+  (news-content, newsDetailText, article body vb.) geçen <p> metinleri
+  en uzun toplam metinli gruptan seçilir; menü/sidebar/yorum kapları ve
+  "devamı için tıklayınız" gibi tanıtım paragrafları atılır; gövde
+  resimleri grup başına toplanır (RSS'te resmi olmayanlara makale
+  resmi bağlanır). script/style içeriği hiç okunmaz.
+- **`ui.py`:** haber seçilince özet ANINDA gösterilir; tam metin arka
+  planda çekilip (thread + kuyruk: "haber_makale") aynı okuyucuya
+  yazılır; oturumluk önbellek (`_haber_tam`, bağlantı anahtarlı) —
+  geri dönüşte yeniden çekilmez; çekilemezse özet kalır + durum
+  çubuğunda bildirim. Medya sor satırı makale sonrası güncellenir.
+- **`tests/haber_test.py`:** makale ayıklama + okuyucu tam metin +
+  önbellek denetimleri — 56 denetim; `run_all.sh` 29/29 geçti.
+  (Sahte makale yanıtı bayt beklediği için ilk koşuda str/bytes
+  uyumsuzluğu testte düzeltildi.)
+- Canlı doğrulama: Hürriyet makalesi 30 paragraf, Sabah 6 paragraf
+  okuyucuya tam geldi.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).
+
+## Haber okuyucusunda yazı tipi seçimi (2026-11-27)
+
+**Talep:** "haber açıklamasının gösterildiği yerde fontları
+değiştirebilmeliyim"
+
+### Değişiklikler (`ui.py`, `config.py`)
+- Haberler araç satırına "Yazı:" combobox'ı (sistemde bulunan adaylar:
+  Ubuntu, DejaVu Sans, Liberation Sans/Serif, Noto Sans, FreeSans …)
+  + A− / A+ boyut düğmeleri + "N pt" etiketi.
+- `_haber_font_uygula`: gövde (tip, boyut), başlık (boyut+2 kalın),
+  meta (boyut−2) — anında uygulanır; mevcut metin de değişir.
+- Tercihler hesap.json'a: "haber_yazi_tipi", "haber_yazi_boyutu"
+  (GLOBAL_ANAHTARLAR'a eklendi; boyut 8-20 arası kırpılır).
+
+### Testler
+- `haber_test.py`: combobox dolumu, tip değişimi (kayıt + uygulama),
+  A+ (kayıt + uygulama), alt sınır — 60 denetim; `run_all.sh` 29/29
+  geçti.
+- Yerel kopyaya uygulandı (build temizliğiyle, sürüm sabit — kural 10).

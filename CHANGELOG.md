@@ -3,6 +3,58 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimindedir
 ve proje [SemVer](https://semver.org/lang/tr/) sürümleme kullanır.
 
+## [0.1.43] — 2026-11-27
+
+### Eklenen
+- **Haberler sekmesi:** Takvim'in yanında 📰 sekmesi. Kullanıcı bir
+  gazete adresi (örn. `hurriyet.com.tr`, `sabah.com.tr`) yazar; uygulama
+  site üzerinde otomatik besleme keşfi yapar (sayfadaki
+  `<link rel="alternate">` bağlantısı, olmazsa yaygın RSS yolları) ve
+  haber başlıklarını çeker (RSS 2.0 + Atom; canlı doğrulandı:
+  hurriyet.com.tr 69 haber, sabah.com.tr 10 haber).
+- **Tek liste + kaynak sütunu + gazete filtresi:** tüm kaynaklar tek
+  listede en yeniden eskiye; Saat ve Kaynak sütunlarıyla. Üst çubukta
+  **Kaynak combobox'ı** ("Tümü" + eklenen gazeteler) seçilen gazeteye
+  filtreler. Kaynaklar `hesap.json`'da (`haber_kaynaklari`) saklanır;
+  **Kaynak Ekle** düğmesi gazete adı + site adresi soran küçük bir
+  pencere açar (ad boşsa beslemenin kendi başlığı kullanılır);
+  **Kaynak Sil** (onaylı) ve **Yenile** düğmeleri yanıba.
+- **Uygulama içi okuma (haberin TAMAMI):** haber seçilince okuyucu
+  bölmede başlık, kaynak/tarih ve özet anında görünür; haberin tam
+  metni arka planda makale sayfasından ayıklanıp aynı bölmede
+  gösterilir ("devamı için tıklayınız" tanıtımıyla yetinilmez).
+  Ayıklayıcı, sayfadaki makale gövdesi kabını (ad/class kalıbına göre:
+  news-content, newsDetailText vb.) seçip paragrafları ve gövde
+  resimlerini çıkarır; menü/yan sütun/yorum paragrafları ile
+  "devamı için" kırpıntılarını atar (canlı doğrulandı: Hürriyet 30
+  paragraf, Sabah 6). Tam metin oturum içinde önbelleklenir; RSS'de
+  resmi olmayan haberlerde makale resmi "Resmi indir" düğmesine
+  bağlanır. Uzak medya KULLANICI onayı olmadan indirilmez: haberde
+  resim varsa "Resmi indir", video varsa "Videoyu indir ve aç"
+  düğmesi çıkar; onayla indirilen resim okuyucuya gömülür
+  (genişliğe sığdırılır), video geçici dosyaya indirilip sistem
+  oynatıcısıyla açılır (25 MB sınırı). Tam makale için
+  "Tarayıcıda aç" düğmesi.
+- **Okuyucu yazı tipi seçimi:** Haberler araç çubuğunda yazı tipi
+  combobox'ı (sistemde bulunan adaylar) ve A− / A+ boyut düğmeleri;
+  seçim okuyucuya (gövde + başlık + meta satırı) anında uygulanır ve
+  tercihe kaydedilir (`haber_yazi_tipi`, `haber_yazi_boyutu`; boyut
+  8-20 arası sınırlı).
+- Sekme açıkken haberler 15 dakikada bir otomatik tazelenir; hatalı
+  kaynak sessizce atlanıp durum çubuğunda bildirilir.
+
+### Testler
+- `tests/haber_test.py` (yeni, 60 denetim): RSS/Atom ayrıştırma, medya
+  bulma (media:content/enclosure/açıklama <img>), windows-1254,
+  besleme keşfi (doğrudan adres / `<link>` keşfi / yaygın yollar /
+  bulunamadı), boyut sınırı, makale metni ayıklama (gövde kabı
+  seçimi, menü/tanıtım atma, resim toplama); arayüzde pencereden
+  kaynak ekleme, combobox filtresi (kaynağa süzme / Tümü), liste,
+  okuyucuda tam metin + önbellek + yazı tipi/boyut seçimi, sorarak
+  resim gömme, video açma, kaynak silme (combobox güncellenir),
+  sekme zamanlayıcısı.
+  `run_all.sh` 29/29 geçti.
+
 ## [0.1.42] — 2026-11-27
 
 ### Değiştirilen

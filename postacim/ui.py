@@ -38,6 +38,7 @@ from .config import Ayarlar, KisiDefteri
 from . import dosya_secici
 from . import guncelleme
 from . import kandilli
+from . import haberler
 from . import meteoroloji
 from . import tekrar
 from . import PROJE_ADRESI, __version__ as SURUM
@@ -1166,6 +1167,10 @@ class Postacim(tk.Tk):
         self.takvim_sayfa = ttk.Frame(self.defter)
         self.defter.add(self.takvim_sayfa, text="  📅 Takvim  ")
         self._takvim_kur()
+        # --- Haberler sekmesi ---
+        self.haber_sayfa = ttk.Frame(self.defter)
+        self.defter.add(self.haber_sayfa, text="  📰 Haberler  ")
+        self._haberler_kur()
         self.defter.bind("<<NotebookTabChanged>>", self._sekme_degisti)
 
     # ------------------------------------------------- gövde: zoom / sığdırma
@@ -1337,13 +1342,23 @@ class Postacim(tk.Tk):
     # ------------------------------------------------------------ Takvim
 
     def _sekme_degisti(self, _olay=None):
-        """Takvim sekmesi açılınca randevuları arka planda çeker."""
+        """Takvim sekmesinde randevular, Haberler sekmesinde haberler çekilir."""
         try:
-            if self.defter.index("current") != 1:
-                self._takvim_otomatik_durdur()
-                return
+            secili = self.defter.index("current")
         except tk.TclError:
             return
+        if secili != 1:
+            self._takvim_otomatik_durdur()
+        if secili != 2:
+            self._haberler_otomatik_durdur()
+        if secili == 1:
+            self._takvim_sekmesi_acildi()
+        elif secili == 2:
+            self._haberler_otomatik_baslat()
+            if not self.haber_yuklendi:
+                self._haberler_yenile()
+
+    def _takvim_sekmesi_acildi(self):
         if not self._takvim_kaynaklari():
             if hasattr(self, "ajanda_baslik"):
                 self.ajanda_baslik.configure(text="Takvim")
@@ -1354,7 +1369,7 @@ class Postacim(tk.Tk):
                 )
                 self.ajanda_detay.configure(
                     text="“Takvim Hesapları” ile CalDAV (Gmail, Nextcloud, "
-                    "iCloud…) bağlayın ya da Exchange (EWS) hesabına geçin."
+                         "iCloud…) bağlayın ya da Exchange (EWS) hesabına geçin."
                 )
             return
         if not (self.takvim_yuklendi and self.randevular):
@@ -3212,6 +3227,25 @@ class Postacim(tk.Tk):
         elif tur == "deprem_hata":
             # Sessiz: deprem verisi açılışı engellememeli; panel nötr kalır
             self.durum.set(f"Deprem verisi alınamadı: {veri[2]}")
+        elif tur == "haberler":
+            self._haberler_uygula(veri[1], veri[2])
+        elif tur == "haber_hata":
+            self.durum.set(f"Haberler alınamadı: {veri[2]}")
+            self.haber_yuklendi = False
+        elif tur == "haber_site_ekle":
+            self._haber_site_ekle_uygula(veri[1])
+        elif tur == "haber_site_hata":
+            self.durum.set(f"Besleme bulunamadı: {veri[2]}")
+        elif tur == "haber_medya":
+            self._haber_resim_uygula(veri[1], veri[2])
+        elif tur == "haber_video":
+            self._haber_video_ac(veri[1])
+        elif tur == "haber_makale":
+            self._haber_makale_uygula(veri[1], veri[2], veri[3])
+        elif tur == "haber_makale_hata":
+            self.durum.set(f"Tam metin alınamadı: {veri[2]}")
+        elif tur == "haber_medya_hata":
+            self.durum.set(f"Medya indirilemedi: {veri[2]}")
         elif tur == "guncelleme_durum":
             self.durum.set(veri[1])
             if getattr(self, "karsilama", None) and self.karsilama.winfo_exists():
@@ -3746,6 +3780,556 @@ class Postacim(tk.Tk):
             side="left", padx=10)
         ttk.Button(alt, text="Kapat", command=pencere.destroy).pack(side="left")
         pencere.bind("<Escape>", lambda e: pencere.destroy())
+
+    # ------------------------------------------------------------------ haberler
+
+    HABER_YENILEME_DK = 15          # sekme açıkken otomatik tazeleme
+    HABER_MEDYA_MB = 25             # resim/video indirme üst sınırı
+
+    def _haberler_kur(self):
+        """Haberler sekmesi: site ekleme + tek liste + uygulama içi okuma."""
+        self.haber_yuklendi = False
+        self.haber_liste: list[haberler.Haber] = []
+        self._haber_zamanlayici = None
+        self._haber_foto = None          # gömülü resim referansı (GC kaymasın)
+        self._haber_video_dosya = None   # indirilen son video (geçici dosya)
+        self._haber_secili = None        # okuyucuda açık haber
+        self._haber_tam: dict[str, tuple] = {}   # bağlantı → (paragraflar, resimler)
+
+        sayfa = self.haber_sayfa
+        arac = ttk.Frame(sayfa)
+        arac.pack(fill="x", padx=6, pady=(6, 2))
+        ttk.Label(arac, text="Kaynak:").pack(side="left")
+        self.haber_kaynak_secim = tk.StringVar(value="Tümü")
+        self.haber_kaynak_secici = ttk.Combobox(
+            arac, textvariable=self.haber_kaynak_secim, state="readonly",
+            width=26, values=("Tümü",))
+        self.haber_kaynak_secici.pack(side="left", padx=6)
+        self.haber_kaynak_secici.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._haberler_listeyi_doldur())
+        ttk.Button(arac, text="Kaynak Ekle",
+                   command=self._haber_kaynak_formu).pack(side="left")
+        ttk.Button(arac, text="Kaynak Sil",
+                   command=self._haber_kaynak_sil).pack(side="left",
+                                                       padx=(6, 0))
+        ttk.Button(arac, text="Yenile", image=self.ikon["otomatik"],
+                   compound="left", command=self._haberler_yenile).pack(
+            side="left", padx=(6, 0))
+        # --- okuyucu yazı tipi seçimi (tercihe kaydedilir) ---
+        ttk.Label(arac, text="Yazı:").pack(side="left", padx=(12, 0))
+        self.haber_yazi_boyutu = int(
+            self.ayarlar.al("haber_yazi_boyutu", 11))
+        self.haber_yazi_tipi_degisken = tk.StringVar(
+            value=self.ayarlar.al("haber_yazi_tipi", YAZI_TIPİ))
+        aileler = self._haber_font_aileleri()
+        if self.haber_yazi_tipi_degisken.get() not in aileler:
+            aileler = (self.haber_yazi_tipi_degisken.get(),) + aileler
+        self.haber_font_secici = ttk.Combobox(
+            arac, textvariable=self.haber_yazi_tipi_degisken,
+            values=aileler, state="readonly", width=16)
+        self.haber_font_secici.pack(side="left", padx=6)
+        self.haber_font_secici.bind(
+            "<<ComboboxSelected>>", self._haber_font_degisti)
+        self.haber_boyut_etiketi = ttk.Label(
+            arac, text=f"{self.haber_yazi_boyutu} pt")
+        self.haber_boyut_etiketi.pack(side="left")
+        ttk.Button(arac, text="A−", width=3,
+                   command=lambda: self._haber_font_boyut_degistir(-1)
+                   ).pack(side="left", padx=(4, 0))
+        ttk.Button(arac, text="A+", width=3,
+                   command=lambda: self._haber_font_boyut_degistir(1)
+                   ).pack(side="left", padx=(4, 0))
+
+        # --- okuyucu altı: medya sor satırı (yalnız medya varken dolu) ---
+        # PanedWindow'dan ÖNCE alttan paketlenir; yoksa paned tüm alanı alır,
+        # satır pencere dışında kalıp eşlenmez (sayfalama çubuğu dersi).
+        self.haber_medya_satiri = ttk.Frame(sayfa)
+        self.haber_medya_satiri.pack(side="bottom", fill="x", padx=8,
+                                     pady=(0, 6))
+        self.haber_medya_etiket = ttk.Label(self.haber_medya_satiri)
+        self.haber_medya_etiket.pack(side="left")
+        self.haber_resim_dugmesi = ttk.Button(
+            self.haber_medya_satiri, text="Resmi indir",
+            command=self._haber_resim_indir)
+        self.haber_video_dugmesi = ttk.Button(
+            self.haber_medya_satiri, text="Videoyu indir ve aç",
+            command=self._haber_video_indir)
+        self.haber_tarayici_dugmesi = ttk.Button(
+            self.haber_medya_satiri, text="Tarayıcıda aç",
+            command=self._haber_tarayicida_ac)
+        self._haber_medya_gizle()
+
+        bolme = ttk.PanedWindow(sayfa, orient="vertical")
+        bolme.pack(fill="both", expand=True, padx=6, pady=(2, 2))
+
+        # --- üst: haber listesi ---
+        liste_ala = ttk.Frame(bolme)
+        sutunlar = ("saat", "kaynak", "baslik")
+        self.haber_agaci = ttk.Treeview(
+            liste_ala, columns=sutunlar, show="headings", selectmode="browse")
+        self.haber_agaci.heading("saat", text="Saat")
+        self.haber_agaci.heading("kaynak", text="Kaynak")
+        self.haber_agaci.heading("baslik", text="Başlık")
+        self.haber_agaci.column("saat", width=100, stretch=False, anchor="center")
+        self.haber_agaci.column("kaynak", width=140, stretch=False)
+        self.haber_agaci.column("baslik", width=420, stretch=True)
+        kaydirma = ttk.Scrollbar(liste_ala, orient="vertical",
+                                 command=self.haber_agaci.yview)
+        self.haber_agaci.configure(yscrollcommand=kaydirma.set)
+        kaydirma.pack(side="right", fill="y")
+        self.haber_agaci.pack(side="left", fill="both", expand=True)
+        self.haber_agaci.bind("<<TreeviewSelect>>", self._haber_secildi)
+        bolme.add(liste_ala, weight=3)
+
+        # --- alt: okuyucu ---
+        okuyucu = ttk.Frame(bolme)
+        arka, on = self._tema_renkleri()
+        self.haber_metin = tk.Text(
+            okuyucu, wrap="word", padx=12, pady=8, relief="flat",
+            bg=arka, fg=on, insertbackground=on, font=(YAZI_TIPİ, 11),
+            state="disabled", cursor="arrow",
+        )
+        hkaydirma = ttk.Scrollbar(okuyucu, orient="vertical",
+                                  command=self.haber_metin.yview)
+        self.haber_metin.configure(yscrollcommand=hkaydirma.set)
+        hkaydirma.pack(side="right", fill="y")
+        self.haber_metin.pack(side="left", fill="both", expand=True)
+        self.haber_metin.tag_configure("baslik", font=(YAZI_TIPİ, 13, "bold"))
+        self.haber_metin.tag_configure("meta", foreground="#777777",
+                                       font=(YAZI_TIPİ, 9))
+        self._haber_font_uygula()
+        bolme.add(okuyucu, weight=5)
+        self._haberler_bos_goster()
+
+    # okuyucu yazı tipi
+
+    HABER_FONT_ADAYLARI = (
+        "Ubuntu", "DejaVu Sans", "Liberation Sans", "Noto Sans",
+        "Liberation Serif", "DejaVu Serif", "FreeSans", "Poppins",
+        "Roboto", "Open Sans", "Segoe UI", "Arial",
+    )
+
+    def _haber_font_aileleri(self):
+        """Sistemde bulunan aday yazı tipleri (mevcut varsayılan başta)."""
+        mevcut = set(tkfont.families(root=self))
+        aileler = [self.haber_yazi_tipi_degisken.get()]
+        for ad in self.HABER_FONT_ADAYLARI:
+            if ad in mevcut and ad not in aileler:
+                aileler.append(ad)
+        return tuple(aileler)
+
+    def _haber_font_uygula(self):
+        """Okuyucunun yazı tipini/boyutunu gövde + başlık + meta'ya uygular."""
+        tip = self.haber_yazi_tipi_degisken.get()
+        boyut = self.haber_yazi_boyutu
+        try:
+            self.haber_metin.configure(font=(tip, boyut))
+            self.haber_metin.tag_configure(
+                "baslik", font=(tip, boyut + 2, "bold"))
+            self.haber_metin.tag_configure(
+                "meta", foreground="#777777", font=(tip, boyut - 2))
+            self.haber_boyut_etiketi.configure(text=f"{boyut} pt")
+        except tk.TclError:
+            pass
+
+    def _haber_font_degisti(self, _olay=None):
+        """Yazı tipi seçimini kaydeder ve okuyucuya uygular."""
+        self.ayarlar.ayarla("haber_yazi_tipi",
+                            self.haber_yazi_tipi_degisken.get())
+        self.ayarlar.kaydet()
+        self._haber_font_uygula()
+
+    def _haber_font_boyut_degistir(self, yon: int):
+        """A− / A+ ile okuyucu yazı boyutunu değiştirir (8-20 arası)."""
+        self.haber_yazi_boyutu = max(
+            8, min(20, self.haber_yazi_boyutu + yon))
+        self.ayarlar.ayarla("haber_yazi_boyutu", self.haber_yazi_boyutu)
+        self.ayarlar.kaydet()
+        self._haber_font_uygula()
+
+    def _haberler_bos_goster(self):
+        """Kaynak yokken listede bilgilendirme satırı gösterir."""
+        self.haber_agaci.delete(*self.haber_agaci.get_children())
+        self.haber_agaci.insert("", "end", iid="yok",
+                                values=("", "", "Haber kaynağı yok — Kaynak "
+                                        "Ekle ile bir gazete sitesi ekleyin"))
+        self._haber_kaynak_secici_guncelle()
+
+    def _haberler_yenile(self):
+        """Tüm kaynaklardan haberleri arka planda çeker."""
+        kaynaklar = self.ayarlar.al("haber_kaynaklari", [])
+        if not kaynaklar:
+            self._haberler_bos_goster()
+            self.haber_yuklendi = False
+            return
+        self.durum.set("Haberler alınıyor…")
+        threading.Thread(
+            target=self._arka_plan, args=(self._haber_cek_tumu,), daemon=True
+        ).start()
+
+    def _haber_cek_tumu(self):
+        """Tüm kaynağı çeker; hatalı kaynağı atlar (adını rapor eder)."""
+        tumu: list[haberler.Haber] = []
+        hatalar: list[str] = []
+        for kaynak in self.ayarlar.al("haber_kaynaklari", []):
+            try:
+                tumu.extend(haberler.haber_cek(
+                    kaynak.get("besleme", ""), kaynak.get("ad") or ""))
+            except Exception as exc:
+                hatalar.append(
+                    f"{kaynak.get('ad') or kaynak.get('besleme')}: {exc}")
+        return ("haberler", tumu, hatalar)
+
+    def _haberler_uygula(self, haber_listesi, hatalar):
+        """Çekilen haberleri listeye yazar (tüm kaynaklar tek listede)."""
+        self.haber_yuklendi = True
+        self.haber_liste = haberler.sirala(haber_listesi)
+        self._haber_kaynak_secici_guncelle()
+        self._haberler_listeyi_doldur()
+        self._haber_okuyucu_temizle()
+        mesaj = f"Haberler: {len(self.haber_liste)} haber"
+        if hatalar:
+            mesaj += f" • {len(hatalar)} kaynak okunamadı ({hatalar[0]})"
+        self.durum.set(mesaj)
+
+    def _haber_kaynak_secici_guncelle(self):
+        """Kaynak combobox'ını güncel kaynaklarla doldurur; seçim korunur."""
+        kaynaklar = [k.get("ad") or k.get("besleme", "")
+                     for k in self.ayarlar.al("haber_kaynaklari", [])]
+        degerler = tuple(["Tümü"] + kaynaklar)
+        self.haber_kaynak_secici.configure(values=degerler)
+        if self.haber_kaynak_secim.get() not in degerler:
+            self.haber_kaynak_secim.set("Tümü")
+
+    def _haberler_listeyi_doldur(self):
+        """Seçili kaynağa göre süzüp listeyi yazar (Tümü = süzme yok)."""
+        agac = self.haber_agaci
+        agac.delete(*agac.get_children())
+        secim = self.haber_kaynak_secim.get()
+        for tam_i, hab in enumerate(self.haber_liste):
+            if secim not in ("", "Tümü") and hab.kaynak != secim:
+                continue
+            agac.insert("", "end", iid=str(tam_i),
+                        values=(self._haber_saat(hab), hab.kaynak, hab.baslik))
+        if not agac.get_children():
+            agac.insert("", "end", iid="yok",
+                        values=("", "", "Bu kaynakta haber yok"))
+
+    @staticmethod
+    def _haber_saat(hab: haberler.Haber) -> str:
+        """Listedeki Saat sütunu: bugünse saati, değilse tarih+saat."""
+        if not hab.tarih:
+            return ""
+        simdi = datetime.now()
+        if hab.tarih.date() == simdi.date():
+            return hab.tarih.strftime("%H:%M")
+        return hab.tarih.strftime("%d.%m.%Y %H:%M")
+
+    def _haber_okuyucu_temizle(self):
+        """Okuyucuyu ve medya satırını boşaltır."""
+        self._haber_secili = None
+        self._haber_foto = None
+        self.haber_metin.configure(state="normal")
+        self.haber_metin.delete("1.0", "end")
+        self.haber_metin.configure(state="disabled")
+        self._haber_medya_gizle()
+
+    def _haber_medya_gizle(self):
+        for _d in (self.haber_resim_dugmesi, self.haber_video_dugmesi,
+                   self.haber_tarayici_dugmesi):
+            _d.pack_forget()
+        self.haber_medya_etiket.configure(text="")
+
+    def _haber_secildi(self, _olay=None):
+        """Listede seçilen haberi okuyucuda gösterir; tam metni çeker."""
+        secim = self.haber_agaci.selection()
+        if not secim or secim[0] == "yok":
+            return
+        try:
+            i = int(secim[0])
+        except ValueError:
+            return
+        if not 0 <= i < len(self.haber_liste):
+            return
+        hab = self.haber_liste[i]
+        self._haber_secili = hab
+        tam = self._haber_tam.get(hab.baglanti) if hab.baglanti else None
+        self._haber_makale_yaz(hab, tam)
+        if tam is None and hab.baglanti:
+            # Özet hemen görünür; haberin TAMAMI arka planda çekilir
+            self.durum.set("Haberin tam metni alınıyor…")
+            threading.Thread(
+                target=self._arka_plan, args=(self._haber_makale_cek, hab),
+                daemon=True,
+            ).start()
+
+    def _haber_makale_yaz(self, hab: haberler.Haber, tam: tuple | None):
+        """Okuyucuyu yazar: tam metin varsa onu, yoksa özeti gösterir."""
+        metin = self.haber_metin
+        metin.configure(state="normal")
+        metin.delete("1.0", "end")
+        metin.insert("end", hab.baslik + "\n", "baslik")
+        meta = hab.kaynak
+        if hab.tarih:
+            meta += f" • {hab.tarih.strftime('%d.%m.%Y %H:%M')}"
+        metin.insert("end", meta + "\n", "meta")
+        metin.insert("end", "\n")
+        if tam and tam[0]:
+            metin.insert("end", "\n\n".join(tam[0]) + "\n")
+            if not hab.resim and tam[1]:
+                hab.resim = tam[1][0]
+        else:
+            metin.insert("end", (hab.ozet or "Özet yok.") + "\n")
+        metin.configure(state="disabled")
+        # Medya sor satırı: uzak içerik KULLANICI onayı olmadan indirilmez
+        self._haber_medya_gizle()
+        if hab.resim:
+            self.haber_medya_etiket.configure(text="Bu haberde resim var.")
+            self.haber_resim_dugmesi.pack(side="left", padx=(8, 0))
+        if hab.video:
+            if not hab.resim:
+                self.haber_medya_etiket.configure(text="Bu haberde video var.")
+            self.haber_video_dugmesi.pack(side="left", padx=(8, 0))
+        if hab.baglanti:
+            self.haber_tarayici_dugmesi.pack(side="left", padx=(8, 0))
+
+    def _haber_makale_cek(self, hab: haberler.Haber):
+        """Haber sayfasını indirip makale metnini ayıklar (arka plan)."""
+        try:
+            paragraflar, resimler = haberler.makale_cek(hab.baglanti)
+        except Exception as exc:
+            return ("haber_makale_hata", hab, f"{type(exc).__name__}: {exc}")
+        return ("haber_makale", hab, paragraflar, resimler)
+
+    def _haber_makale_uygula(self, hab: haberler.Haber, paragraflar, resimler):
+        """Çekilen tam metni okuyucuya yazar (haber hâlâ açıksa)."""
+        self._haber_tam[hab.baglanti] = (paragraflar, resimler)
+        if self._haber_secili is not hab:
+            return  # kullanıcı başka habere geçti
+        if not paragraflar:
+            self.durum.set("Tam metin alınamadı — özet gösteriliyor")
+            return
+        self._haber_makale_yaz(hab, (paragraflar, resimler))
+        self.durum.set("Haberin tamamı gösteriliyor")
+
+    def _haber_kaynak_formu(self):
+        """Kaynak ekleme penceresi: gazete adı + site adresi sorar."""
+        pencere = tk.Toplevel(self)
+        pencere.title("Haber Kaynağı Ekle")
+        pencere.transient(self)
+        pencere.resizable(False, False)
+        self._pencere_simgesi(pencere)
+        govde = ttk.Frame(pencere, padding=12)
+        govde.pack(fill="both", expand=True)
+
+        ad_degisken = tk.StringVar()
+        url_degisken = tk.StringVar()
+
+        ttk.Label(govde, text="Gazete adı (isteğe bağlı):").grid(
+            row=0, column=0, sticky="w", pady=(0, 4))
+        ad_girdi = ttk.Entry(govde, textvariable=ad_degisken, width=38)
+        ad_girdi.grid(row=1, column=0, sticky="we", pady=(0, 8))
+        ttk.Label(govde, text="Site adresi:").grid(
+            row=2, column=0, sticky="w", pady=(0, 4))
+        url_girdi = ttk.Entry(govde, textvariable=url_degisken, width=38)
+        url_girdi.grid(row=3, column=0, sticky="we", pady=(0, 10))
+        ttk.Label(govde, text="Örnek: hurriyet.com.tr, sabah.com.tr",
+                  foreground="#777777").grid(row=4, column=0, sticky="w")
+
+        dugmeler = ttk.Frame(govde)
+        dugmeler.grid(row=5, column=0, sticky="e", pady=(10, 0))
+
+        def ekle(_olay=None):
+            adres = url_degisken.get().strip()
+            if not adres:
+                self.durum.set("Site adresi boş olamaz")
+                return
+            self._haber_kaynak_ekle(adres, ad_degisken.get().strip())
+            pencere.destroy()
+
+        ttk.Button(dugmeler, text="Ekle", command=ekle).pack(side="left")
+        ttk.Button(dugmeler, text="İptal",
+                   command=pencere.destroy).pack(side="left", padx=(6, 0))
+        pencere.bind("<Return>", ekle)
+        pencere.bind("<Escape>", lambda _e: pencere.destroy())
+        url_girdi.focus_set()
+
+    def _haber_kaynak_ekle(self, adres: str, ad: str = ""):
+        """Girilen site adresinde besleme arar (arka planda)."""
+        if not adres.strip():
+            return
+        self.durum.set(f"Besleme aranıyor: {adres}")
+        threading.Thread(
+            target=self._arka_plan,
+            args=(self._haber_kaynak_ekle_cek, adres, ad),
+            daemon=True,
+        ).start()
+
+    def _haber_kaynak_ekle_cek(self, adres, ad):
+        try:
+            besleme, baslik = haberler.besleme_bul(adres)
+        except Exception as exc:
+            return ("haber_site_hata", adres, str(exc))
+        return ("haber_site_ekle",
+                {"ad": ad or baslik, "besleme": besleme,
+                 "site": haberler._url_duzelt(adres)})
+
+    def _haber_site_ekle_uygula(self, kaynak: dict):
+        """Bulunan beslemeyi kaynaklara ekler, kaydeder ve haberleri çeker."""
+        kaynaklar = self.ayarlar.al("haber_kaynaklari", [])
+        if any(k.get("besleme") == kaynak["besleme"] for k in kaynaklar):
+            self.durum.set(f"Kaynak zaten var: {kaynak['ad']}")
+            return
+        kaynaklar.append(kaynak)
+        self.ayarlar.ayarla("haber_kaynaklari", kaynaklar)
+        self.ayarlar.kaydet()
+        self._haber_kaynak_secici_guncelle()
+        self.haber_kaynak_secim.set(kaynak["ad"])
+        self.durum.set(f"Kaynak eklendi: {kaynak['ad']}")
+        self._haberler_yenile()
+
+    def _haber_kaynak_sil(self):
+        """Seçili haberin kaynağını kaynaklardan çıkarır (onaylı)."""
+        secim = self.haber_agaci.selection()
+        if not secim or secim[0] == "yok":
+            self.durum.set("Silinecek kaynak için listeden haber seçin")
+            return
+        try:
+            hab = self.haber_liste[int(secim[0])]
+        except (ValueError, IndexError):
+            return
+        if not messagebox.askyesno(
+                "Kaynak Sil", f"“{hab.kaynak}” kaynağı silinsin mi?"):
+            return
+        kaynaklar = [k for k in self.ayarlar.al("haber_kaynaklari", [])
+                     if k.get("ad") != hab.kaynak]
+        self.ayarlar.ayarla("haber_kaynaklari", kaynaklar)
+        self.ayarlar.kaydet()
+        self.durum.set(f"Kaynak silindi: {hab.kaynak}")
+        self._haber_kaynak_secici_guncelle()
+        self._haberler_yenile()
+
+    def _haber_tarayicida_ac(self):
+        """Okuyucuda açık haberin tam makalesini tarayıcıda açar."""
+        if self._haber_secili and self._haber_secili.baglanti:
+            webbrowser.open(self._haber_secili.baglanti)
+
+    def _haber_resim_indir(self):
+        """Kullanıcı sorusunun ('Resmi indir') karşılığı: resmi indirir."""
+        hab = self._haber_secili
+        if not hab or not hab.resim:
+            return
+        self.durum.set("Resim indiriliyor…")
+        threading.Thread(
+            target=self._arka_plan,
+            args=(lambda: ("haber_medya",
+                           haberler.medya_indir(hab.resim, self.HABER_MEDYA_MB * 1024 * 1024),
+                           hab),
+                  ),
+            daemon=True,
+        ).start()
+
+    def _haber_resim_uygula(self, bayt: bytes, hab: haberler.Haber):
+        """İndirilen resmi okuyucunun sonuna ekler (haber hâlâ açıksa)."""
+        if self._haber_secili is not hab:
+            return  # kullanıcı başka habere geçti
+        try:
+            foto = self._haber_foto_olustur(bayt)
+        except Exception as exc:
+            self.durum.set(f"Resim gösterilemedi: {exc}")
+            return
+        self._haber_foto = foto
+        metin = self.haber_metin
+        metin.configure(state="normal")
+        metin.insert("end", "\n")
+        metin.image_create("end", image=foto)
+        metin.insert("end", "\n")
+        metin.configure(state="disabled")
+        self.haber_resim_dugmesi.pack_forget()
+        self.haber_medya_etiket.configure(text="")
+        self.durum.set("Resim gösterildi")
+
+    def _haber_foto_olustur(self, veri: bytes):
+        """Resim baytlarını okuyucu genişliğine sığdırıp Tk nesnesine çevirir."""
+        try:
+            self.haber_metin.update_idletasks()
+            genislik = self.haber_metin.winfo_width() - 28
+        except tk.TclError:
+            genislik = 600
+        genislik = max(240, min(genislik, 900))
+        from PIL import Image, ImageTk
+        resim = Image.open(io.BytesIO(veri))
+        resim.load()
+        if resim.mode not in ("RGB", "RGBA", "P", "L"):
+            resim = resim.convert("RGB")
+        if resim.width > genislik:
+            oran = genislik / resim.width
+            resim = resim.resize(
+                (genislik, max(1, int(resim.height * oran))), Image.LANCZOS
+            )
+        return ImageTk.PhotoImage(resim)
+
+    def _haber_video_indir(self):
+        """Kullanıcı sorusunun ('Videoyu indir ve aç') karşılığı: indirir."""
+        hab = self._haber_secili
+        if not hab or not hab.video:
+            return
+        self.durum.set("Video indiriliyor (25 MB'a kadar)…")
+        hedef = os.path.join(
+            tempfile.gettempdir(), f"postacim-haber-video-{int(time.time())}")
+        threading.Thread(
+            target=self._arka_plan,
+            args=(self._haber_video_cek, hab.video, hedef),
+            daemon=True,
+        ).start()
+
+    def _haber_video_cek(self, url: str, hedef: str):
+        try:
+            bayt = haberler.medya_indir(url, self.HABER_MEDYA_MB * 1024 * 1024)
+            with open(hedef + ".part", "wb") as f:
+                f.write(bayt)
+            os.replace(hedef + ".part", hedef)
+        except Exception as exc:
+            return ("haber_medya_hata", url, str(exc))
+        return ("haber_video", hedef)
+
+    def _haber_video_ac(self, yol: str):
+        """İndirilen videoyu sistem oynatıcısıyla açar (Tk video oynatamaz)."""
+        eski = self._haber_video_dosya
+        self._haber_video_dosya = yol
+        if eski and eski != yol:
+            try:
+                os.unlink(eski)
+            except OSError:
+                pass
+        subprocess.Popen(["xdg-open", yol])
+        self.durum.set("Video sistem oynatıcısında açıldı")
+
+    def _haberler_otomatik_baslat(self):
+        """Haberler sekmesi açıkken periyodik tazeleme kurar."""
+        self._haberler_otomatik_durdur()
+        dk = self.HABER_YENILEME_DK
+        if dk > 0:
+            self._haber_zamanlayici = self.after(
+                dk * 60 * 1000, self._haberler_otomatik_tik)
+
+    def _haberler_otomatik_durdur(self):
+        if self._haber_zamanlayici is not None:
+            try:
+                self.after_cancel(self._haber_zamanlayici)
+            except tk.TclError:
+                pass
+            self._haber_zamanlayici = None
+
+    def _haberler_otomatik_tik(self):
+        """Periyodik tazeleme: sekme açıksa haberleri yeniden çeker."""
+        try:
+            if self.defter.index("current") == 2:
+                self._haberler_yenile()
+                self._haberler_otomatik_baslat()
+        except tk.TclError:
+            pass
 
     def _guncelleme_oto_degisti(self):
         """Yardım menüsündeki 'Otomatik güncelleme' işaretini kaydeder."""
